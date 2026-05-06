@@ -13,7 +13,7 @@ function App() {
   });
 
 // ADVANTAGE TEST //
-/*   const [currentPrompt, setCurrentPrompt] = useState({ 
+/*  const [currentPrompt, setCurrentPrompt] = useState({ 
       id: 1, 
       question: "Did you move frequently as a child?", 
       type: "disadvantage" 
