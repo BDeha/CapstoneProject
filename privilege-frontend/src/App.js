@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 function App() {
-  // 1. State Management
+  // State Management
   const [studentAlias, setStudentAlias] = useState('');
   const [feedback, setFeedback] = useState(null); // 'ahead' or 'back'
   
@@ -19,13 +19,13 @@ function App() {
       type: "disadvantage" 
     }); */
 
-  // 2. Anonymized Identity Factory
+  // Anonymized Identity Factory
   useEffect(() => {
     const randomId = "User_" + Math.floor(Math.random() * 10000);
     setStudentAlias(randomId);
   }, []);
 
-  // 3. Communication with Express Backend
+  // Communication with Express Backend
   const handleAnswer = async (answer) => {
     try {
       const response = await fetch('http://localhost:3000/api/walk', {
@@ -40,7 +40,7 @@ function App() {
 
       const data = await response.json();
       
-      // 4. Visual Feedback Logic
+      // Visual Feedback Logic
       if (data.movement === 1) {
         setFeedback('ahead');
       } else if (data.movement === -1) {
@@ -61,7 +61,7 @@ function App() {
       <button onClick={() => handleAnswer('yes')}>Yes</button>
       <button onClick={() => handleAnswer('no')}>No</button>
 
-      {/* Visual Cues requested by Dr. Sechrest */}
+      {/* Visual Cues Dr. Sechrest wanted*/}
       {feedback === 'ahead' && (
         <div style={{ backgroundColor: 'green', color: 'white', padding: '20px', marginTop: '20px' }}>
           <h1>Take a step ahead!</h1>
