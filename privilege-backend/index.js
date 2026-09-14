@@ -13,7 +13,10 @@ const db = mysql.createPool({
     port: 3306,
     user: 'root',
     password: '',
-    database: 'privilege_walk'
+    database: 'privilege_walk',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
 app.get('/', (req, res) => {
