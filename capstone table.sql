@@ -35,3 +35,5 @@ SELECT * FROM prompts;
 ALTER TABLE responses ADD UNIQUE (student_alias);
 SELECT * FROM responses;
 TRUNCATE TABLE responses;
+SELECT COUNT(*) FROM prompts;
+TRUNCATE TABLE prompts;
