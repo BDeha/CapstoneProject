@@ -25,7 +25,7 @@ app.get('/', (req, res) => {
 
 // Route to fetch all prompts dynamically from the database
 app.get('/api/prompts', (req, res) => {
-    const query = 'SELECT * FROM prompts';
+    const query = 'SELECT * FROM prompts LIMIT 10';
     db.query(query, (err, results) => {
         if (err) {
             console.error('Database query error:', err);
