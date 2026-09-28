@@ -37,3 +37,57 @@ SELECT * FROM responses;
 TRUNCATE TABLE responses;
 SELECT COUNT(*) FROM prompts;
 TRUNCATE TABLE prompts;
+
+-- Facilitator-managed session tracking
+CREATE TABLE IF NOT EXISTS sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_code VARCHAR(16) NOT NULL UNIQUE,
+    status ENUM('active', 'locked', 'archived') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Secure student registration & credential storage
+CREATE TABLE IF NOT EXISTS students (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    assigned_alias VARCHAR(64) NOT NULL UNIQUE,
+    session_code VARCHAR(16) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_code) REFERENCES sessions(session_code) ON DELETE CASCADE
+);
+
+
+-- TESTINGGGG --
+-- Seed an initial test session code for development
+INSERT IGNORE INTO sessions (session_code, status) VALUES ('WALK2026', 'active');
+
+-- Register a student using that session code
+INSERT INTO students (name, email, password_hash, assigned_alias, session_code)
+VALUES ('Jane Doe', 'jane@example.com', 'hashed_pw_sample', 'User_101', 'WALK2026');
+
+-- Verify the relational link
+SELECT 
+    s.id AS student_id,
+    s.name,
+    s.email,
+    s.assigned_alias,
+    sess.session_code,
+    sess.status AS session_status
+FROM students s
+JOIN sessions sess ON s.session_code = sess.session_code;
+
+-- Should FAIL with Error 1452 (Cannot add child row: foreign key constraint fails)
+INSERT INTO students (name, email, password_hash, assigned_alias, session_code)
+VALUES ('John Smith', 'john@example.com', 'hashed_pw', 'User_102', 'INVALID_CODE');
+
+-- Should FAIL with Error 1062 (Duplicate entry for email)
+INSERT INTO students (name, email, password_hash, assigned_alias, session_code)
+VALUES ('Jane Copy', 'jane@example.com', 'hashed_pw', 'User_999', 'WALK2026');
+
+-- Deleting the session should automatically remove associated student records
+DELETE FROM sessions WHERE session_code = 'WALK2026';
+
+-- Confirm table is now empty
+SELECT * FROM students;

@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "corepack": "^0.34.6",
     "cors": "^2.8.6",
     "express": "^5.2.1",
