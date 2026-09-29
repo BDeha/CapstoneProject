@@ -153,11 +153,10 @@ app.get('/api/prompts', (req, res) => {
 
 // The Scoring Engine for the Privilege Walk
 app.post('/api/walk', (req, res) => {
-    // FIX 1: Destructure alias and current_score along with answer and type
     const { answer, type, alias, current_score } = req.body; 
     let stepValue = 0;
 
-    // The prompt is an ADVANTAGE (e.g., "Parents own a home")
+    // The prompt is an ADVANTAGE
     if (type === 'advantage') {
         if (answer === 'yes') {
             stepValue = 1;  // Step Forward
@@ -165,7 +164,7 @@ app.post('/api/walk', (req, res) => {
             stepValue = 0;  // Stay in place
         }
     } 
-    // The prompt is a DISADVANTAGE (e.g., "Parents didn't finish high school")
+    // The prompt is a DISADVANTAGE
     else if (type === 'disadvantage') {
         if (answer === 'yes') {
             stepValue = -1; // Step Backward
@@ -188,7 +187,6 @@ app.post('/api/walk', (req, res) => {
             console.error('Database error when saving response:', err);
             return res.status(500).json({ error: 'Failed to record response' });
         }
-        // Send total_score back with the movement instruction
         res.json({ message: "Position updated", movement: stepValue, total_score: newScore });
     });
 });
