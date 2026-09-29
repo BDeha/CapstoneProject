@@ -1,12 +1,12 @@
-const express = require('express'); // Import Express
-const cors = require('cors');        // Import CORS
-const mysql = require('mysql2');     // Import MySQL2 driver
-const bcrypt = require('bcryptjs');  // Import bcrypt for secure password hashing
+const express = require('express'); 
+const cors = require('cors');        
+const mysql = require('mysql2');     
+const bcrypt = require('bcryptjs');  
 
-const app = express();               // NOW build the "brain"
+const app = express();               
 
-app.use(cors());                     // Unlock the doors
-app.use(express.json());             // Add the translator
+app.use(cors());                     
+app.use(express.json());             
 
 // MySQL Database Connection Pool
 const db = mysql.createPool({
@@ -25,10 +25,131 @@ app.get('/', (req, res) => {
 });
 
 // -------------------------------------------------------------------
+// FACILITATOR / ADMIN ENDPOINTS
+// -------------------------------------------------------------------
+
+// Hardcoded Facilitator Login Endpoint
+app.post('/api/admin/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (username === 'admin' && password === 'admin123') {
+        return res.json({ message: 'Facilitator login successful' });
+    } else {
+        return res.status(401).json({ error: 'Invalid facilitator credentials.' });
+    }
+});
+
+// Facilitator Endpoint: Create or Re-activate a Named Walk Session
+app.post('/api/sessions/create', (req, res) => {
+    const { session_name, session_code, duration_hours } = req.body;
+
+    if (!session_name || !session_code) {
+        return res.status(400).json({ error: 'Session Name and Session Code are required.' });
+    }
+
+    const hours = duration_hours ? parseInt(duration_hours) : 2;
+    const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+
+    const upsertSessionQuery = `
+        INSERT INTO sessions (session_name, session_code, status, expires_at) 
+        VALUES (?, ?, 'active', ?)
+        ON DUPLICATE KEY UPDATE 
+            session_name = VALUES(session_name), 
+            status = 'active', 
+            expires_at = VALUES(expires_at)
+    `;
+
+    db.query(upsertSessionQuery, [session_name, session_code, expiresAt], (err, result) => {
+        if (err) {
+            console.error('Error creating/reactivating session:', err);
+            return res.status(500).json({ error: `Database error: ${err.sqlMessage || 'Failed to create session'}` });
+        }
+
+        res.status(201).json({
+            message: 'Session created successfully',
+            session_name,
+            session_code,
+            expires_at: expiresAt
+        });
+    });
+});
+
+// Facilitator Endpoint: Get All Active Sessions
+app.get('/api/sessions/active', (req, res) => {
+    const query = "SELECT id, session_name, session_code, created_at, expires_at FROM sessions WHERE status = 'active' ORDER BY id DESC";
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching active sessions:', err);
+            return res.status(500).json({ error: 'Failed to fetch active sessions' });
+        }
+        res.json(results);
+    });
+});
+
+// Facilitator Endpoint: Get All Sessions History (Active & Ended)
+app.get('/api/sessions/all', (req, res) => {
+    const query = "SELECT id, session_name, session_code, status, created_at, expires_at FROM sessions ORDER BY id DESC";
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching all sessions:', err);
+            return res.status(500).json({ error: 'Failed to fetch sessions history' });
+        }
+        res.json(results);
+    });
+});
+
+// Facilitator Endpoint: End an Active Session
+app.post('/api/sessions/end', (req, res) => {
+    const { session_code } = req.body;
+
+    if (!session_code) {
+        return res.status(400).json({ error: 'Session code is required.' });
+    }
+
+    const endSessionQuery = "UPDATE sessions SET status = 'ended' WHERE session_code = ?";
+
+    db.query(endSessionQuery, [session_code], (err, result) => {
+        if (err) {
+            console.error('Error ending session in MySQL:', err);
+            return res.status(500).json({ error: 'Failed to end session.' });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Session code not found.' });
+        }
+
+        res.json({ message: `Session ${session_code} has been successfully ended.` });
+    });
+});
+
+// Facilitator Endpoint: Delete a Session from History
+app.delete('/api/sessions/delete', (req, res) => {
+    const { session_code } = req.body;
+
+    if (!session_code) {
+        return res.status(400).json({ error: 'Session code is required.' });
+    }
+
+    const deleteSessionQuery = "DELETE FROM sessions WHERE session_code = ?";
+
+    db.query(deleteSessionQuery, [session_code], (err, result) => {
+        if (err) {
+            console.error('Error deleting session:', err);
+            return res.status(500).json({ error: 'Failed to delete session from database.' });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Session code not found.' });
+        }
+
+        res.json({ message: `Session ${session_code} has been permanently deleted.` });
+    });
+});
+
+// -------------------------------------------------------------------
 // STUDENT AUTHENTICATION ENDPOINTS
 // -------------------------------------------------------------------
 
-// Student Registration Endpoint
 app.post('/api/students/register', async (req, res) => {
     const { real_name, email, password, session_code } = req.body;
 
@@ -37,13 +158,7 @@ app.post('/api/students/register', async (req, res) => {
     }
 
     try {
-        // Verify active and non-expired session code
-        const sessionCheckQuery = `
-            SELECT * FROM sessions 
-            WHERE session_code = ? 
-              AND status = "active" 
-              AND (expires_at IS NULL OR expires_at > NOW())
-        `;
+        const sessionCheckQuery = "SELECT * FROM sessions WHERE session_code = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())";
 
         db.query(sessionCheckQuery, [session_code], async (err, sessionResults) => {
             if (err) {
@@ -54,38 +169,31 @@ app.post('/api/students/register', async (req, res) => {
                 return res.status(400).json({ error: 'Invalid, inactive, or expired session code.' });
             }
 
-            // Generate unique student alias (e.g., User_4821)
+            // Generate auto-assigned alias
             const assignedAlias = `User_${Math.floor(1000 + Math.random() * 9000)}`;
 
-            // Hash password securely
             const salt = await bcrypt.genSalt(10);
             const passwordHash = await bcrypt.hash(password, salt);
 
-            // Step A: Insert into student_identities (Hidden Student Names Lookup for Facilitator)
-            const insertIdentityQuery = `
-                INSERT INTO student_identities (real_name, email, assigned_alias, session_code)
-                VALUES (?, ?, ?, ?)
-            `;
+            // Step 1: Record real identity separately
+            const insertIdentityQuery = "INSERT INTO student_identities (real_name, email, assigned_alias, session_code) VALUES (?, ?, ?, ?)";
 
             db.query(insertIdentityQuery, [real_name, email, assignedAlias, session_code], (idErr) => {
                 if (idErr) {
+                    console.error('--- STUDENT IDENTITY INSERT ERROR ---', idErr);
                     if (idErr.code === 'ER_DUP_ENTRY') {
-                        return res.status(400).json({ error: 'An account with this email already exists.' });
+                        return res.status(400).json({ error: 'An account with this email address already exists.' });
                     }
-                    console.error('Student identity insert error:', idErr);
-                    return res.status(500).json({ error: 'Failed to record student identity.' });
+                    return res.status(500).json({ error: `Failed to record student identity: ${idErr.sqlMessage || 'Database error'}` });
                 }
 
-                // Step B: Insert into students (Auth Credentials)
-                const insertStudentQuery = `
-                    INSERT INTO students (assigned_alias, password_hash, session_code)
-                    VALUES (?, ?, ?)
-                `;
+                // Step 2: Record login credentials
+                const insertStudentQuery = "INSERT INTO students (assigned_alias, password_hash, session_code) VALUES (?, ?, ?)";
 
                 db.query(insertStudentQuery, [assignedAlias, passwordHash, session_code], (studentErr) => {
                     if (studentErr) {
-                        console.error('Student auth insert error:', studentErr);
-                        return res.status(500).json({ error: 'Failed to create student credentials.' });
+                        console.error('--- STUDENT CREDENTIALS INSERT ERROR ---', studentErr);
+                        return res.status(500).json({ error: `Failed to create student credentials: ${studentErr.sqlMessage}` });
                     }
 
                     res.status(201).json({
@@ -102,7 +210,6 @@ app.post('/api/students/register', async (req, res) => {
     }
 });
 
-// Student Login Endpoint
 app.post('/api/students/login', (req, res) => {
     const { assigned_alias, password } = req.body;
 
@@ -139,7 +246,6 @@ app.post('/api/students/login', (req, res) => {
 // PROMPTS, SCORING & LEADERBOARD ENDPOINTS
 // -------------------------------------------------------------------
 
-// Route to fetch all prompts dynamically from the database in fixed order
 app.get('/api/prompts', (req, res) => {
     const query = 'SELECT * FROM prompts ORDER BY id ASC';
     db.query(query, (err, results) => {
@@ -151,36 +257,27 @@ app.get('/api/prompts', (req, res) => {
     });
 });
 
-// The Scoring Engine for the Privilege Walk
 app.post('/api/walk', (req, res) => {
     const { answer, type, alias, current_score } = req.body; 
     let stepValue = 0;
 
-    // The prompt is an ADVANTAGE
     if (type === 'advantage') {
         if (answer === 'yes') {
-            stepValue = 1;  // Step Forward
+            stepValue = 1;  
         } else {
-            stepValue = 0;  // Stay in place
+            stepValue = 0;  
         }
-    } 
-    // The prompt is a DISADVANTAGE
-    else if (type === 'disadvantage') {
+    } else if (type === 'disadvantage') {
         if (answer === 'yes') {
-            stepValue = -1; // Step Backward
+            stepValue = -1; 
         } else {
-            stepValue = 0;  // Stay in place
+            stepValue = 0;  
         }
     }
 
     const newScore = (current_score || 0) + stepValue;
 
-    // Persist or update the student's score in the MySQL responses table
-    const upsertQuery = `
-        INSERT INTO responses (student_alias, total_score) 
-        VALUES (?, ?) 
-        ON DUPLICATE KEY UPDATE total_score = ?
-    `;
+    const upsertQuery = "INSERT INTO responses (student_alias, total_score) VALUES (?, ?) ON DUPLICATE KEY UPDATE total_score = ?";
 
     db.query(upsertQuery, [alias, newScore, newScore], (err) => {
         if (err) {
@@ -191,7 +288,6 @@ app.post('/api/walk', (req, res) => {
     });
 });
 
-// Route to fetch horizontal leaderboard data at the end of the walk
 app.get('/api/leaderboard', (req, res) => {
     const query = 'SELECT student_alias, total_score FROM responses ORDER BY total_score ASC';
     db.query(query, (err, results) => {

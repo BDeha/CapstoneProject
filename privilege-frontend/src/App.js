@@ -2,20 +2,69 @@ import React, { useState, useEffect } from 'react';
 
 function App() {
     // Navigation & Auth States
-    const [view, setView] = useState('register'); // 'register' | 'id_confirm' | 'login' | 'walk' | 'leaderboard'
-    const [sessionCode, setSessionCode] = useState('WALK2026');
+    const [view, setView] = useState('register'); // 'register' | 'id_confirm' | 'login' | 'walk' | 'leaderboard' | 'admin_login' | 'admin_dashboard'
+    const [sessionCode, setSessionCode] = useState('');
     const [studentAlias, setStudentAlias] = useState('');
     const [password, setPassword] = useState('');
     const [realName, setRealName] = useState('');
     const [email, setEmail] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
+    // Facilitator Admin Auth States
+    const [adminUsername, setAdminUsername] = useState('');
+    const [adminPassword, setAdminPassword] = useState('');
+    const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+
+    // Admin / Facilitator Session Creator States
+    const [newSessionName, setNewSessionName] = useState('');
+    const [newSessionCode, setNewSessionCode] = useState('');
+    const [adminSuccessMsg, setAdminSuccessMsg] = useState('');
+    const [activeSessions, setActiveSessions] = useState([]);
+    const [allSessions, setAllSessions] = useState([]);
+    const [sessionTab, setSessionTab] = useState('active'); // 'active' | 'history'
+
     // Privilege Walk States
     const [prompts, setPrompts] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [score, setScore] = useState(0);
-    const [feedback, setFeedback] = useState(null); // 'ahead' or 'back'
+    const [feedback, setFeedback] = useState(null); 
     const [leaderboardData, setLeaderboardData] = useState([]);
+
+    // Fetch active sessions from backend
+    const fetchActiveSessions = async () => {
+        try {
+            const res = await fetch('http://localhost:3000/api/sessions/active');
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setActiveSessions(data);
+            }
+        } catch (err) {
+            console.error("Error fetching active sessions:", err);
+        }
+    };
+
+    // Fetch all sessions history from backend
+    const fetchAllSessions = async () => {
+        try {
+            const res = await fetch('http://localhost:3000/api/sessions/all');
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setAllSessions(data);
+            }
+        } catch (err) {
+            console.error("Error fetching all sessions history:", err);
+        }
+    };
+
+    // Auto-fetch active & history lists whenever facilitator dashboard is active
+    useEffect(() => {
+        if (view === 'admin_dashboard' && isAdminAuthenticated) {
+            fetchActiveSessions();
+            fetchAllSessions();
+        }
+    }, [view, isAdminAuthenticated, sessionTab]);
 
     // Fetch all prompts when walk view becomes active
     useEffect(() => {
@@ -24,14 +73,14 @@ function App() {
                 .then((res) => res.json())
                 .then((data) => {
                     if (Array.isArray(data) && data.length > 0) {
-                        setPrompts(data); // Fetches all prompts in fixed sequence
+                        setPrompts(data);
                     }
                 })
                 .catch((err) => console.error("Error fetching prompts:", err));
         }
     }, [view]);
 
-    // Fetch leaderboard data when reaching the end view
+    // Fetch leaderboard data when walk is completed
     useEffect(() => {
         if (view === 'leaderboard') {
             fetch('http://localhost:3000/api/leaderboard')
@@ -40,6 +89,148 @@ function App() {
                 .catch((err) => console.error("Error fetching leaderboard:", err));
         }
     }, [view]);
+
+    // Handle Hardcoded Facilitator Login
+    const handleAdminLogin = async (e) => {
+        e.preventDefault();
+        setErrorMessage('');
+
+        try {
+            const response = await fetch('http://localhost:3000/api/admin/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: adminUsername,
+                    password: adminPassword
+                })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setErrorMessage(data.error || 'Login failed.');
+                return;
+            }
+
+            setIsAdminAuthenticated(true);
+            setView('admin_dashboard');
+
+            // Trigger immediate list fetches upon successful login
+            await fetchActiveSessions();
+            await fetchAllSessions();
+        } catch (err) {
+            setErrorMessage('Unable to connect to server.');
+        }
+    };
+
+    // Handle Admin Session Creation / Reactivation
+    const handleCreateSession = async (e) => {
+        e.preventDefault();
+        setErrorMessage('');
+        setAdminSuccessMsg('');
+
+        try {
+            const response = await fetch('http://localhost:3000/api/sessions/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_name: newSessionName,
+                    session_code: newSessionCode,
+                    duration_hours: 2
+                })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setErrorMessage(data.error || 'Failed to create session.');
+                return;
+            }
+
+            setAdminSuccessMsg(`Session "${data.session_name}" activated with code: ${data.session_code}`);
+            setSessionCode(data.session_code); 
+            setNewSessionName('');
+            setNewSessionCode('');
+
+            const newSessionObj = {
+                id: Date.now(),
+                session_name: data.session_name,
+                session_code: data.session_code,
+                created_at: new Date().toISOString()
+            };
+
+            setActiveSessions((prevSessions) => {
+                const filtered = prevSessions.filter(s => s.session_code !== data.session_code);
+                return [newSessionObj, ...filtered];
+            });
+
+            setTimeout(() => {
+                fetchActiveSessions();
+                fetchAllSessions();
+            }, 300);
+
+        } catch (err) {
+            setErrorMessage('Unable to connect to server.');
+        }
+    };
+
+    // Handle Ending an Active Session
+    const handleEndSession = async (codeToEnd) => {
+        setErrorMessage('');
+        setAdminSuccessMsg('');
+
+        try {
+            const response = await fetch('http://localhost:3000/api/sessions/end', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_code: codeToEnd })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setErrorMessage(data.error || 'Failed to end session.');
+                return;
+            }
+
+            setAdminSuccessMsg(`Session "${codeToEnd}" has been officially closed.`);
+            setActiveSessions((prev) => prev.filter((s) => s.session_code !== codeToEnd));
+            fetchAllSessions();
+        } catch (err) {
+            console.error("End session fetch error:", err);
+            setErrorMessage('Unable to connect to server. Check backend terminal for details.');
+        }
+    };
+
+    // Handle Permanently Deleting a Session from History
+    const handleDeleteSession = async (codeToDelete) => {
+        if (!window.confirm(`Are you sure you want to permanently delete session "${codeToDelete}"?`)) {
+            return;
+        }
+
+        setErrorMessage('');
+        setAdminSuccessMsg('');
+
+        try {
+            const response = await fetch('http://localhost:3000/api/sessions/delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_code: codeToDelete })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                setErrorMessage(data.error || 'Failed to delete session.');
+                return;
+            }
+
+            setAdminSuccessMsg(`Session "${codeToDelete}" permanently deleted.`);
+            
+            // Optimistically update UI states
+            setAllSessions((prev) => prev.filter((s) => s.session_code !== codeToDelete));
+            setActiveSessions((prev) => prev.filter((s) => s.session_code !== codeToDelete));
+        } catch (err) {
+            console.error("Delete session fetch error:", err);
+            setErrorMessage('Unable to connect to server.');
+        }
+    };
 
     // Handle Student Registration
     const handleRegister = async (e) => {
@@ -119,7 +310,6 @@ function App() {
             const data = await response.json();
             setScore(data.total_score);
 
-            // Trigger visual movement feedback
             if (data.movement === 1) {
                 setFeedback('ahead');
             } else if (data.movement === -1) {
@@ -128,7 +318,6 @@ function App() {
                 setFeedback(null);
             }
 
-            // Display feedback briefly, then move to next prompt or transition to leaderboard
             setTimeout(() => {
                 setFeedback(null);
                 if (currentIndex + 1 < prompts.length) {
@@ -143,12 +332,211 @@ function App() {
         }
     };
 
-    // 1. Student Registration View
+    // 1. FACILITATOR LOGIN GATE VIEW
+    if (view === 'admin_login') {
+        return (
+            <div style={{ textAlign: 'center', marginTop: '50px' }}>
+                <div style={{ maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
+                    <h2>Facilitator Portal Login</h2>
+                    {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
+                    <form onSubmit={handleAdminLogin}>
+                        <label>Username:</label>
+                        <input
+                            type="text"
+                            required
+                            value={adminUsername}
+                            onChange={(e) => setAdminUsername(e.target.value)}
+                            style={{ width: '100%', marginBottom: '10px', padding: '8px' }}
+                        />
+
+                        <label>Password:</label>
+                        <input
+                            type="password"
+                            required
+                            value={adminPassword}
+                            onChange={(e) => setAdminPassword(e.target.value)}
+                            style={{ width: '100%', marginBottom: '15px', padding: '8px' }}
+                        />
+
+                        <button type="submit" style={{ width: '100%', padding: '10px', fontSize: '16px', backgroundColor: '#343a40', color: 'white', border: 'none', cursor: 'pointer' }}>
+                            Log In as Facilitator
+                        </button>
+                    </form>
+                    <p style={{ marginTop: '15px', textAlign: 'center' }}>
+                        <button onClick={() => { setErrorMessage(''); setView('register'); }} style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}>
+                            &larr; Back to Student Portal
+                        </button>
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // 2. FACILITATOR SESSION CREATOR & MANAGEMENT DASHBOARD
+    if (view === 'admin_dashboard') {
+        if (!isAdminAuthenticated) {
+            return (
+                <div style={{ textAlign: 'center', marginTop: '60px' }}>
+                    <p style={{ color: 'red' }}>Access Denied. Please log in as facilitator.</p>
+                    <button onClick={() => setView('admin_login')}>Go to Login</button>
+                </div>
+            );
+        }
+
+        return (
+            <div style={{ textAlign: 'center', marginTop: '40px' }}>
+                <div style={{ maxWidth: '550px', margin: '0 auto', textAlign: 'left' }}>
+                    <h2>Facilitator Portal</h2>
+                    {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
+                    {adminSuccessMsg && <p style={{ color: 'green', fontWeight: 'bold' }}>{adminSuccessMsg}</p>}
+
+                    {/* CREATE SESSION SECTION */}
+                    <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '25px', backgroundColor: '#fafafa' }}>
+                        <h3>Start / Re-activate Session</h3>
+                        <form onSubmit={handleCreateSession}>
+                            <label>Session Name:</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g., CMSCI 474 Section A"
+                                value={newSessionName}
+                                onChange={(e) => setNewSessionName(e.target.value)}
+                                style={{ width: '100%', marginBottom: '10px', padding: '8px' }}
+                            />
+
+                            <label>Session Join Code:</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g., WALK2026"
+                                value={newSessionCode}
+                                onChange={(e) => setNewSessionCode(e.target.value)}
+                                style={{ width: '100%', marginBottom: '15px', padding: '8px' }}
+                            />
+
+                            <button type="submit" style={{ width: '100%', padding: '10px', fontSize: '16px', backgroundColor: '#28a745', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px' }}>
+                                Start Active Session
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* SESSION MANAGEMENT TABS */}
+                    <div style={{ display: 'flex', borderBottom: '2px solid #ccc', marginBottom: '15px' }}>
+                        <button 
+                            onClick={() => setSessionTab('active')}
+                            style={{
+                                padding: '10px 20px',
+                                cursor: 'pointer',
+                                border: 'none',
+                                background: sessionTab === 'active' ? '#007bff' : '#e9ecef',
+                                color: sessionTab === 'active' ? 'white' : 'black',
+                                fontWeight: 'bold',
+                                borderRadius: '4px 4px 0 0',
+                                marginRight: '5px'
+                            }}
+                        >
+                            Active Sessions ({activeSessions.length})
+                        </button>
+                        <button 
+                            onClick={() => setSessionTab('history')}
+                            style={{
+                                padding: '10px 20px',
+                                cursor: 'pointer',
+                                border: 'none',
+                                background: sessionTab === 'history' ? '#007bff' : '#e9ecef',
+                                color: sessionTab === 'history' ? 'white' : 'black',
+                                fontWeight: 'bold',
+                                borderRadius: '4px 4px 0 0'
+                            }}
+                        >
+                            All Sessions History ({allSessions.length})
+                        </button>
+                    </div>
+
+                    {/* TAB CONTENT: ACTIVE SESSIONS */}
+                    {sessionTab === 'active' && (
+                        <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px' }}>
+                            {activeSessions.length === 0 ? (
+                                <p style={{ color: '#666', fontStyle: 'italic', margin: 0 }}>No active sessions currently running.</p>
+                            ) : (
+                                activeSessions.map((session) => (
+                                    <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                                        <div>
+                                            <strong>{session.session_name}</strong>
+                                            <div style={{ fontSize: '13px', color: '#555' }}>Code: <code>{session.session_code}</code></div>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleEndSession(session.session_code)}
+                                            style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', cursor: 'pointer', borderRadius: '4px' }}
+                                        >
+                                            End Session
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB CONTENT: ALL SESSIONS HISTORY */}
+                    {sessionTab === 'history' && (
+                        <div style={{ border: '1px solid #6c757d', padding: '20px', borderRadius: '8px' }}>
+                            {allSessions.length === 0 ? (
+                                <p style={{ color: '#666', fontStyle: 'italic', margin: 0 }}>No session history found.</p>
+                            ) : (
+                                allSessions.map((session) => (
+                                    <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                                        <div>
+                                            <strong>{session.session_name}</strong>
+                                            <div style={{ fontSize: '13px', color: '#555' }}>Code: <code>{session.session_code}</code></div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <span style={{ 
+                                                padding: '4px 8px', 
+                                                borderRadius: '12px', 
+                                                fontSize: '12px', 
+                                                fontWeight: 'bold',
+                                                backgroundColor: session.status === 'active' ? '#28a745' : '#6c757d',
+                                                color: 'white'
+                                            }}>
+                                                {session.status.toUpperCase()}
+                                            </span>
+
+                                            <button 
+                                                onClick={() => handleDeleteSession(session.session_code)}
+                                                style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                                title="Delete Session"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+
+                    <p style={{ marginTop: '25px', textAlign: 'center' }}>
+                        <button onClick={() => setView('register')} style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}>
+                            &larr; Switch to Student Portal
+                        </button>
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // 3. STUDENT REGISTRATION VIEW
     if (view === 'register') {
         return (
             <div style={{ textAlign: 'center', marginTop: '50px' }}>
                 <div style={{ maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
-                    <h2>Student Registration</h2>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h2>Student Registration</h2>
+                        <button onClick={() => { setErrorMessage(''); setView('admin_login'); }} style={{ background: 'none', border: 'none', color: '#6c757d', cursor: 'pointer', fontSize: '12px' }}>
+                            [Facilitator Portal]
+                        </button>
+                    </div>
+
                     {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
                     <form onSubmit={handleRegister}>
                         <label>Full Name:</label>
@@ -202,7 +590,7 @@ function App() {
         );
     }
 
-    // 2. Auto-Assigned ID Confirmation Screen
+    // 4. AUTO-ASSIGNED ID CONFIRMATION SCREEN
     if (view === 'id_confirm') {
         return (
             <div style={{ textAlign: 'center', marginTop: '60px' }}>
@@ -221,7 +609,7 @@ function App() {
         );
     }
 
-    // 3. Student Login View
+    // 5. STUDENT LOGIN VIEW
     if (view === 'login') {
         return (
             <div style={{ textAlign: 'center', marginTop: '50px' }}>
@@ -262,7 +650,7 @@ function App() {
         );
     }
 
-    // 4. Completion View (Horizontal Leaderboard Spectrum)
+    // 6. COMPLETION VIEW (HORIZONTAL LEADERBOARD SPECTRUM)
     if (view === 'leaderboard') {
         return (
             <div style={{ textAlign: 'center', marginTop: '50px' }}>
@@ -309,7 +697,7 @@ function App() {
         );
     }
 
-    // 5. Loading State (Only triggers when actively in walk mode and waiting for prompts)
+    // 7. LOADING STATE
     if (view === 'walk' && !prompts.length) {
         return (
             <div style={{ textAlign: 'center', marginTop: '60px' }}>
@@ -319,7 +707,7 @@ function App() {
         );
     }
 
-    // 6. Active Privilege Walk View
+    // 8. ACTIVE PRIVILEGE WALK VIEW
     return (
         <div style={{ textAlign: 'center', marginTop: '50px' }}>
             <h2>Participant: {studentAlias}</h2>
