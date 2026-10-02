@@ -23,12 +23,14 @@ function App() {
     const [allSessions, setAllSessions] = useState([]);
     const [sessionTab, setSessionTab] = useState('active'); // 'active' | 'history'
 
-    // Privilege Walk States
+    // Privilege Walk & Reflection States
     const [prompts, setPrompts] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [score, setScore] = useState(0);
     const [feedback, setFeedback] = useState(null); 
     const [leaderboardData, setLeaderboardData] = useState([]);
+    const [reflectionText, setReflectionText] = useState('');
+    const [reflectionSubmitted, setReflectionSubmitted] = useState(false);
 
     // Fetch active sessions from backend
     const fetchActiveSessions = async () => {
@@ -114,7 +116,6 @@ function App() {
             setIsAdminAuthenticated(true);
             setView('admin_dashboard');
 
-            // Trigger immediate list fetches upon successful login
             await fetchActiveSessions();
             await fetchAllSessions();
         } catch (err) {
@@ -195,7 +196,7 @@ function App() {
             fetchAllSessions();
         } catch (err) {
             console.error("End session fetch error:", err);
-            setErrorMessage('Unable to connect to server. Check backend terminal for details.');
+            setErrorMessage('Unable to connect to server.');
         }
     };
 
@@ -222,8 +223,6 @@ function App() {
             }
 
             setAdminSuccessMsg(`Session "${codeToDelete}" permanently deleted.`);
-            
-            // Optimistically update UI states
             setAllSessions((prev) => prev.filter((s) => s.session_code !== codeToDelete));
             setActiveSessions((prev) => prev.filter((s) => s.session_code !== codeToDelete));
         } catch (err) {
@@ -330,6 +329,44 @@ function App() {
         } catch (err) {
             console.error("Error communicating with server:", err);
         }
+    };
+
+    // Handle Submitting Reflection Text
+    const handleSubmitReflection = async (e) => {
+        e.preventDefault();
+        if (!reflectionText.trim()) return;
+
+        try {
+            const response = await fetch('http://localhost:3000/api/reflection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    alias: studentAlias,
+                    reflection: reflectionText
+                })
+            });
+
+            if (response.ok) {
+                setReflectionSubmitted(true);
+            }
+        } catch (err) {
+            console.error("Error submitting reflection:", err);
+        }
+    };
+
+    // Handle Student Exit & Logout
+    const handleLogout = () => {
+        setSessionCode('');
+        setStudentAlias('');
+        setPassword('');
+        setRealName('');
+        setEmail('');
+        setScore(0);
+        setCurrentIndex(0);
+        setReflectionText('');
+        setReflectionSubmitted(false);
+        setErrorMessage('');
+        setView('register');
     };
 
     // 1. FACILITATOR LOGIN GATE VIEW
@@ -650,15 +687,16 @@ function App() {
         );
     }
 
-    // 6. COMPLETION VIEW (HORIZONTAL LEADERBOARD SPECTRUM)
+    // 6. COMPLETION & POST-WALK REFLECTION VIEW
     if (view === 'leaderboard') {
         return (
-            <div style={{ textAlign: 'center', marginTop: '50px' }}>
+            <div style={{ textAlign: 'center', marginTop: '40px', paddingBottom: '60px' }}>
                 <h2>Participant: {studentAlias}</h2>
                 <h1 style={{ fontSize: '32px' }}>Privilege Walk Complete</h1>
                 <p style={{ fontSize: '22px' }}>Your final position score: <strong>{score}</strong></p>
 
-                <div style={{ maxWidth: '800px', margin: '40px auto 0 auto' }}>
+                {/* HORIZONTAL CLASS POSITION SPECTRUM */}
+                <div style={{ maxWidth: '800px', margin: '30px auto 40px auto' }}>
                     <h3>Class Position Spectrum</h3>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '10px' }}>
                         <span>&larr; Further Behind</span>
@@ -692,6 +730,44 @@ function App() {
                             </div>
                         ))}
                     </div>
+                </div>
+
+                {/* POST-WALK REFLECTION MODULE */}
+                <div style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'left', border: '1px solid #ccc', padding: '25px', borderRadius: '8px', backgroundColor: '#fafafa' }}>
+                    <h3>Post-Walk Reflection</h3>
+                    <p style={{ fontSize: '14px', color: '#555', lineHeight: '1.5' }}>
+                        Taking a moment to reflect is an essential part of this exercise. How did you feel observing your relative placement along the spectrum compared to your peers?
+                    </p>
+
+                    {reflectionSubmitted ? (
+                        <p style={{ color: 'green', fontWeight: 'bold', marginTop: '15px' }}>
+                            ✓ Your reflection response has been recorded. Thank you for participating!
+                        </p>
+                    ) : (
+                        <form onSubmit={handleSubmitReflection}>
+                            <textarea
+                                required
+                                rows={5}
+                                placeholder="Write your reflection response here..."
+                                value={reflectionText}
+                                onChange={(e) => setReflectionText(e.target.value)}
+                                style={{ width: '100%', padding: '10px', fontSize: '14px', marginBottom: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            />
+                            <button type="submit" style={{ padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px', fontSize: '15px' }}>
+                                Submit Reflection
+                            </button>
+                        </form>
+                    )}
+                </div>
+
+                {/* EXIT / LOGOUT CONTROL */}
+                <div style={{ marginTop: '35px' }}>
+                    <button 
+                        onClick={handleLogout}
+                        style={{ padding: '10px 24px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px' }}
+                    >
+                        Exit Exercise & Logout
+                    </button>
                 </div>
             </div>
         );

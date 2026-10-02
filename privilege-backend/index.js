@@ -169,13 +169,11 @@ app.post('/api/students/register', async (req, res) => {
                 return res.status(400).json({ error: 'Invalid, inactive, or expired session code.' });
             }
 
-            // Generate auto-assigned alias
             const assignedAlias = `User_${Math.floor(1000 + Math.random() * 9000)}`;
 
             const salt = await bcrypt.genSalt(10);
             const passwordHash = await bcrypt.hash(password, salt);
 
-            // Step 1: Record real identity separately
             const insertIdentityQuery = "INSERT INTO student_identities (real_name, email, assigned_alias, session_code) VALUES (?, ?, ?, ?)";
 
             db.query(insertIdentityQuery, [real_name, email, assignedAlias, session_code], (idErr) => {
@@ -187,7 +185,6 @@ app.post('/api/students/register', async (req, res) => {
                     return res.status(500).json({ error: `Failed to record student identity: ${idErr.sqlMessage || 'Database error'}` });
                 }
 
-                // Step 2: Record login credentials
                 const insertStudentQuery = "INSERT INTO students (assigned_alias, password_hash, session_code) VALUES (?, ?, ?)";
 
                 db.query(insertStudentQuery, [assignedAlias, passwordHash, session_code], (studentErr) => {
@@ -243,7 +240,7 @@ app.post('/api/students/login', (req, res) => {
 });
 
 // -------------------------------------------------------------------
-// PROMPTS, SCORING & LEADERBOARD ENDPOINTS
+// PROMPTS, SCORING, REFLECTION & LEADERBOARD ENDPOINTS
 // -------------------------------------------------------------------
 
 app.get('/api/prompts', (req, res) => {
@@ -285,6 +282,26 @@ app.post('/api/walk', (req, res) => {
             return res.status(500).json({ error: 'Failed to record response' });
         }
         res.json({ message: "Position updated", movement: stepValue, total_score: newScore });
+    });
+});
+
+// Student Endpoint: Save Written Reflection
+app.post('/api/reflection', (req, res) => {
+    const { alias, reflection } = req.body;
+
+    if (!alias || !reflection) {
+        return res.status(400).json({ error: 'Alias and reflection text are required.' });
+    }
+
+    const updateReflectionQuery = "UPDATE responses SET reflection_text = ? WHERE student_alias = ?";
+
+    db.query(updateReflectionQuery, [reflection, alias], (err, result) => {
+        if (err) {
+            console.error('Error saving reflection:', err);
+            return res.status(500).json({ error: 'Failed to save reflection.' });
+        }
+
+        res.json({ message: 'Reflection saved successfully.' });
     });
 });
 
