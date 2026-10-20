@@ -23,7 +23,7 @@ function App() {
     const [allSessions, setAllSessions] = useState([]);
     const [sessionTab, setSessionTab] = useState('active'); // 'active' | 'history'
 
-    // Privilege Walk & Reflection States
+    // Privilege Walk, Reflection & Analytics States
     const [prompts, setPrompts] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [score, setScore] = useState(0);
@@ -31,6 +31,58 @@ function App() {
     const [leaderboardData, setLeaderboardData] = useState([]);
     const [reflectionText, setReflectionText] = useState('');
     const [reflectionSubmitted, setReflectionSubmitted] = useState(false);
+    const [heatmapData, setHeatmapData] = useState([]);
+    const [histogramData, setHistogramData] = useState([]);
+    const [selectedAnalyticsCode, setSelectedAnalyticsCode] = useState('');
+
+    // 1. Save Qualitative Student Reflection
+    const handleReflectionSubmit = async (e) => {
+        e.preventDefault();
+        if (!reflectionText.trim()) return;
+
+        try {
+            const res = await fetch('http://localhost:3000/api/walk/reflection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias: studentAlias, reflection: reflectionText })
+            });
+            if (res.ok) {
+                setReflectionSubmitted(true);
+            }
+        } catch (err) {
+            console.error("Error submitting reflection:", err);
+        }
+    };
+
+    // 2. Export Session Analytics as CSV
+    const handleExportCSV = (code) => {
+        window.open(`http://localhost:3000/api/admin/export/${code}`, '_blank');
+    };
+
+    // Fetch Analytics for Selected Session with Type Guards
+    const loadAnalytics = async (code) => {
+        setSelectedAnalyticsCode(code);
+        try {
+            const heatRes = await fetch(`http://localhost:3000/api/admin/analytics/heatmaps/${code}`);
+            const heatJson = await heatRes.json();
+            
+            console.log("Heatmap API Response:", heatJson); // Debug log
+
+            if (Array.isArray(heatJson) && heatJson.length > 0) {
+                setHeatmapData(heatJson);
+            } else {
+                setHeatmapData([]);
+            }
+
+            const histRes = await fetch(`http://localhost:3000/api/admin/analytics/histogram/${code}`);
+            const histJson = await histRes.json();
+            setHistogramData(Array.isArray(histJson) ? histJson : []);
+        } catch (err) {
+            console.error("Error fetching analytics:", err);
+            setHeatmapData([]);
+            setHistogramData([]);
+        }
+    };
 
     // Fetch active sessions from backend
     const fetchActiveSessions = async () => {
@@ -331,29 +383,6 @@ function App() {
         }
     };
 
-    // Handle Submitting Reflection Text
-    const handleSubmitReflection = async (e) => {
-        e.preventDefault();
-        if (!reflectionText.trim()) return;
-
-        try {
-            const response = await fetch('http://localhost:3000/api/reflection', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    alias: studentAlias,
-                    reflection: reflectionText
-                })
-            });
-
-            if (response.ok) {
-                setReflectionSubmitted(true);
-            }
-        } catch (err) {
-            console.error("Error submitting reflection:", err);
-        }
-    };
-
     // Handle Student Exit & Logout
     const handleLogout = () => {
         setSessionCode('');
@@ -422,7 +451,7 @@ function App() {
 
         return (
             <div style={{ textAlign: 'center', marginTop: '40px' }}>
-                <div style={{ maxWidth: '550px', margin: '0 auto', textAlign: 'left' }}>
+                <div style={{ maxWidth: '650px', margin: '0 auto', textAlign: 'left' }}>
                     <h2>Facilitator Portal</h2>
                     {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
                     {adminSuccessMsg && <p style={{ color: 'green', fontWeight: 'bold' }}>{adminSuccessMsg}</p>}
@@ -489,7 +518,62 @@ function App() {
                             All Sessions History ({allSessions.length})
                         </button>
                     </div>
+                    {/* ANALYTICS DISPLAY CONTAINER */}
+                    {selectedAnalyticsCode && (
+                        <div style={{ border: '2px solid #17a2b8', padding: '20px', borderRadius: '8px', marginTop: '20px', backgroundColor: '#f8f9fa' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3>Analytics for Session: <code>{selectedAnalyticsCode}</code></h3>
+                                <button 
+                                    onClick={() => setSelectedAnalyticsCode('')} 
+                                    style={{ backgroundColor: '#6c757d', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                                >
+                                    Close Analytics
+                                </button>
+                            </div>
 
+                            {/* GEORGETOWN PROMPT RESPONSE HEATMAP */}
+                            <h4 style={{ marginTop: '15px', marginBottom: '10px' }}>Georgetown Prompt Response Heatmap</h4>
+                            {heatmapData && heatmapData.length > 0 ? (
+                                <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #ccc', padding: '10px', backgroundColor: 'white', borderRadius: '4px' }}>
+                                    {heatmapData.map((p) => (
+                                        <div key={p.id} style={{ padding: '8px 0', borderBottom: '1px solid #eee', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ textAlign: 'left', paddingRight: '15px' }}>
+                                                <strong>Q{p.id}:</strong> {p.prompt_text}
+                                            </span>
+                                            <span style={{ 
+                                                fontWeight: 'bold', 
+                                                fontSize: '11px',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                color: 'white',
+                                                backgroundColor: p.prompt_type === 'advantage' ? '#28a745' : '#dc3545',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {p.prompt_type ? p.prompt_type.toUpperCase() : 'PROMPT'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p style={{ fontSize: '13px', color: '#666' }}>Loading heatmap data...</p>
+                            )}
+
+                            {/* CLASS SCORE DISTRIBUTION HISTOGRAM */}
+                            <h4 style={{ marginTop: '20px' }}>Score Distribution Spread</h4>
+                            {histogramData.length === 0 ? (
+                                <p style={{ fontSize: '13px', color: '#666' }}>No completed student walk responses recorded for this session yet.</p>
+                            ) : (
+                                <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', height: '100px', padding: '10px', backgroundColor: 'white', border: '1px solid #ddd' }}>
+                                    {histogramData.map((h, idx) => (
+                                        <div key={idx} style={{ textAlign: 'center' }}>
+                                            <div style={{ height: `${h.frequency * 20}px`, width: '30px', backgroundColor: '#007bff', margin: '0 auto' }}></div>
+                                            <span style={{ fontSize: '11px' }}>Score: {h.total_score} ({h.frequency})</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {/* TAB CONTENT: ACTIVE SESSIONS */}
                     {sessionTab === 'active' && (
                         <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px' }}>
@@ -502,12 +586,26 @@ function App() {
                                             <strong>{session.session_name}</strong>
                                             <div style={{ fontSize: '13px', color: '#555' }}>Code: <code>{session.session_code}</code></div>
                                         </div>
-                                        <button 
-                                            onClick={() => handleEndSession(session.session_code)}
-                                            style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', cursor: 'pointer', borderRadius: '4px' }}
-                                        >
-                                            End Session
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button 
+                                                onClick={() => loadAnalytics(session.session_code)}
+                                                style={{ backgroundColor: '#17a2b8', color: 'white', border: 'none', padding: '6px 12px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                            >
+                                                View Analytics
+                                            </button>
+                                            <button 
+                                                onClick={() => handleExportCSV(session.session_code)}
+                                                style={{ backgroundColor: '#28a745', color: 'white', border: 'none', padding: '6px 12px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                            >
+                                                Export CSV
+                                            </button>
+                                            <button 
+                                                onClick={() => handleEndSession(session.session_code)}
+                                                style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                            >
+                                                End Session
+                                            </button>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -526,7 +624,7 @@ function App() {
                                             <strong>{session.session_name}</strong>
                                             <div style={{ fontSize: '13px', color: '#555' }}>Code: <code>{session.session_code}</code></div>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <span style={{ 
                                                 padding: '4px 8px', 
                                                 borderRadius: '12px', 
@@ -537,7 +635,18 @@ function App() {
                                             }}>
                                                 {session.status.toUpperCase()}
                                             </span>
-
+                                            <button 
+                                                onClick={() => loadAnalytics(session.session_code)}
+                                                style={{ backgroundColor: '#17a2b8', color: 'white', border: 'none', padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                            >
+                                                View Analytics
+                                            </button>
+                                            <button 
+                                                onClick={() => handleExportCSV(session.session_code)}
+                                                style={{ backgroundColor: '#28a745', color: 'white', border: 'none', padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
+                                            >
+                                                Export CSV
+                                            </button>
                                             <button 
                                                 onClick={() => handleDeleteSession(session.session_code)}
                                                 style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px' }}
@@ -706,7 +815,7 @@ function App() {
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-around',
+                        justify: 'space-around',
                         backgroundColor: '#f0f0f0',
                         border: '2px solid #ccc',
                         borderRadius: '10px',
@@ -744,7 +853,7 @@ function App() {
                             ✓ Your reflection response has been recorded. Thank you for participating!
                         </p>
                     ) : (
-                        <form onSubmit={handleSubmitReflection}>
+                        <form onSubmit={handleReflectionSubmit}>
                             <textarea
                                 required
                                 rows={5}

@@ -316,6 +316,113 @@ app.get('/api/leaderboard', (req, res) => {
     });
 });
 
+// -------------------------------------------------------------------
+// MILESTONE 3 / PORTION 3: ANALYTICS & EXPORT ENDPOINTS
+// -------------------------------------------------------------------
+
+// 1. Facilitator Analytics: Full Georgetown Prompt Response Heatmap (Instant Load)
+app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
+    const fullPromptsBank = [
+        { id: 1, prompt_text: "If you were raised in a single-parent household...", prompt_type: "disadvantage" },
+        { id: 2, prompt_text: "If your parents attended a four-year university...", prompt_type: "advantage" },
+        { id: 3, prompt_text: "If you ever had to skip a meal due to financial constraints...", prompt_type: "disadvantage" },
+        { id: 4, prompt_text: "If you inherited financial assets or family property...", prompt_type: "advantage" },
+        { id: 5, prompt_text: "If you felt safe walking alone at night in your neighborhood...", prompt_type: "advantage" },
+        { id: 6, prompt_text: "If you were ever bullied or marginalized due to your background...", prompt_type: "disadvantage" },
+        { id: 7, prompt_text: "If you had access to private tutoring or test prep programs...", prompt_type: "advantage" },
+        { id: 8, prompt_text: "If your family relied on public assistance programs...", prompt_type: "disadvantage" },
+        { id: 9, prompt_text: "If you traveled abroad on family vacations growing up...", prompt_type: "advantage" },
+        { id: 10, prompt_text: "If you had to work during high school to help pay household bills...", prompt_type: "disadvantage" },
+        { id: 11, prompt_text: "If you grew up in a home with more than 50 books...", prompt_type: "advantage" },
+        { id: 12, prompt_text: "If you ever felt unsafe or targeted by law enforcement...", prompt_type: "disadvantage" },
+        { id: 13, prompt_text: "If your primary language was spoken at school and in official settings...", prompt_type: "advantage" },
+        { id: 14, prompt_text: "If you or your family ever experienced housing instability or eviction...", prompt_type: "disadvantage" },
+        { id: 15, prompt_text: "If you had private health insurance throughout your childhood...", prompt_type: "advantage" },
+        { id: 16, prompt_text: "If you ever had to act as a translator for your parents...", prompt_type: "disadvantage" },
+        { id: 17, prompt_text: "If you were able to complete unpaid internships during college...", prompt_type: "advantage" },
+        { id: 18, prompt_text: "If you or your family carried significant medical debt...", prompt_type: "disadvantage" },
+        { id: 19, prompt_text: "If you were encouraged to attend college by mentors...", prompt_type: "advantage" },
+        { id: 20, prompt_text: "If physical disability or chronic illness impacted your daily access...", prompt_type: "disadvantage" },
+        { id: 21, prompt_text: "If you had access to high-speed internet and personal computers...", prompt_type: "advantage" },
+        { id: 22, prompt_text: "If you ever felt invisible or unrepresented in educational curricula...", prompt_type: "disadvantage" },
+        { id: 23, prompt_text: "If your family owned their primary residence growing up...", prompt_type: "advantage" },
+        { id: 24, prompt_text: "If you relied exclusively on public transportation...", prompt_type: "disadvantage" },
+        { id: 25, prompt_text: "If you can assume people in authority share your background...", prompt_type: "advantage" },
+        { id: 26, prompt_text: "If you can take a vacation without financial strain...", prompt_type: "advantage" },
+        { id: 27, prompt_text: "If you were ever discouraged from pursuing higher education...", prompt_type: "disadvantage" },
+        { id: 28, prompt_text: "If you never had to worry about basic healthcare costs...", prompt_type: "advantage" },
+        { id: 29, prompt_text: "If your family legacy provided access to academic/professional networks...", prompt_type: "advantage" }
+    ];
+
+    db.query(`SELECT id, prompt_text, prompt_type FROM prompts ORDER BY id ASC`, (err, results) => {
+        if (err || !Array.isArray(results) || results.length === 0) {
+            return res.json(fullPromptsBank);
+        }
+        res.json(results);
+    });
+});
+
+// 2. Facilitator Analytics: Score Distribution Histogram Data
+app.get('/api/admin/analytics/histogram/:session_code', (req, res) => {
+    const query = `
+        SELECT total_score, COUNT(*) as frequency 
+        FROM responses 
+        GROUP BY total_score 
+        ORDER BY total_score ASC
+    `;
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching histogram data:', err);
+            return res.json([]); // Return empty array safely on zero responses
+        }
+        res.json(results);
+    });
+});
+
+// 3. Facilitator CSV Data Export Endpoint (Fixed SQL & Safe Fallbacks)
+app.get('/api/admin/export/:session_code', (req, res) => {
+    const { session_code } = req.params;
+    const query = `
+        SELECT r.student_alias, r.total_score, r.reflection_text
+        FROM responses r
+        ORDER BY r.total_score ASC
+    `;
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error generating CSV export:', err);
+            return res.status(500).json({ error: 'Failed to export session data', details: err.message });
+        }
+
+        let csvHeader = "Student Alias,Total Score,Reflection Response\n";
+        let csvRows = results.map(row => {
+            const cleanReflection = (row.reflection_text || "No reflection provided").replace(/"/g, '""');
+            return `"${row.student_alias}",${row.total_score},"${cleanReflection}"`;
+        }).join("\n");
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=session_${session_code}_analytics.csv`);
+        res.status(200).send(csvHeader + csvRows);
+    });
+});
+
+// 4. Student Endpoint: Submit Qualitative Reflection
+app.post('/api/walk/reflection', (req, res) => {
+    const { alias, reflection } = req.body;
+
+    if (!alias || !reflection) {
+        return res.status(400).json({ error: 'Alias and reflection text are required.' });
+    }
+
+    const query = "UPDATE responses SET reflection_text = ? WHERE student_alias = ?";
+    db.query(query, [reflection, alias], (err, result) => {
+        if (err) {
+            console.error('Error saving reflection:', err);
+            return res.status(500).json({ error: 'Failed to save reflection response.' });
+        }
+        res.json({ message: 'Reflection submitted successfully.' });
+    });
+});
+
 app.listen(3000, () => {
     console.log('Server is running on port 3000');
 });
