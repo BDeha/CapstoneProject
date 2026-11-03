@@ -549,32 +549,57 @@ function App() {
                                 </button>
                             </div>
 
-                            {/* GEORGETOWN PROMPT RESPONSE HEATMAP */}
-                            <h4 style={{ marginTop: '15px', marginBottom: '10px' }}>Georgetown Prompt Response Heatmap</h4>
-                            {heatmapData && heatmapData.length > 0 ? (
-                                <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #ccc', padding: '10px', backgroundColor: 'white', borderRadius: '4px' }}>
-                                    {heatmapData.map((p) => (
-                                        <div key={p.id} style={{ padding: '8px 0', borderBottom: '1px solid #eee', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ textAlign: 'left', paddingRight: '15px' }}>
-                                                <strong>Q{p.id}:</strong> {p.prompt_text}
-                                            </span>
-                                            <span style={{ 
-                                                fontWeight: 'bold', 
-                                                fontSize: '11px',
-                                                padding: '3px 8px',
-                                                borderRadius: '4px',
-                                                color: 'white',
-                                                backgroundColor: p.prompt_type === 'advantage' ? '#28a745' : '#dc3545',
-                                                whiteSpace: 'nowrap'
-                                            }}>
-                                                {p.prompt_type ? p.prompt_type.toUpperCase() : 'PROMPT'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p style={{ fontSize: '13px', color: '#666' }}>Loading heatmap data...</p>
-                            )}
+                            {/* Facilitator Heatmap Scroll Container (Q1 - Q29) */}
+                            <h4 style={{ marginTop: '15px', marginBottom: '10px' }}>
+                                Prompt Response Density Heatmap
+                            </h4>
+                            <div style={{ 
+                                maxHeight: '350px', 
+                                overflowY: 'auto', 
+                                border: '1px solid #ccc', 
+                                borderRadius: '6px', 
+                                padding: '8px', 
+                                backgroundColor: '#f8f9fa' 
+                            }}>
+                                {Array.isArray(heatmapData) && heatmapData.length > 0 ? (
+                                    heatmapData.map((p) => {
+                                        const pct = p.yes_percentage || 0;
+                                        const alpha = Math.max(0.18, pct / 100);
+                                        
+                                        const bgColor = p.prompt_type === 'advantage' 
+                                            ? `rgba(40, 167, 69, ${alpha})` 
+                                            : `rgba(220, 53, 69, ${alpha})`;
+
+                                        return (
+                                            <div 
+                                                key={p.id} 
+                                                style={{ 
+                                                    display: 'flex', 
+                                                    justify: 'space-between', 
+                                                    alignItems: 'center', 
+                                                    padding: '8px 12px', 
+                                                    marginBottom: '4px',
+                                                    borderRadius: '4px',
+                                                    backgroundColor: bgColor,
+                                                    color: alpha > 0.6 ? '#ffffff' : '#212529',
+                                                    fontSize: '13px'
+                                                }}
+                                            >
+                                                <span style={{ textAlign: 'left', paddingRight: '12px' }}>
+                                                    <strong>Q{p.id}:</strong> {p.prompt_text || p.question}
+                                                </span>
+                                                <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                                                    {pct}% Yes ({p.yes_count || 0}/{p.total_responses || 0})
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <p style={{ fontSize: '13px', color: '#666', padding: '10px', margin: 0 }}>
+                                        Loading prompt heatmap data...
+                                    </p>
+                                )}
+                            </div>
 
                             {/* CLASS SCORE DISTRIBUTION HISTOGRAM */}
                             <h4 style={{ marginTop: '20px' }}>Score Distribution Spread</h4>
