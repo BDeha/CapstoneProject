@@ -5,7 +5,34 @@ const bcrypt = require('bcryptjs');
 
 const app = express();               
 
-app.use(cors());                     
+// Clean Network CORS Policy: Explicitly allow local origins & preflight OPTIONS
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001'
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like Postman or server-to-server calls)
+        if (!origin) return callback(null, true);
+
+        // Match local ports OR local network IP addresses (192.168.x.x, 10.x.x.x, 172.x.x.x)
+        const isAllowed = allowedOrigins.includes(origin) || 
+                        /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin);
+
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            callback(new Error('Blocked by CORS policy: Unauthorized Origin.'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
+
 app.use(express.json());             
 
 // MySQL Database Connection Pool

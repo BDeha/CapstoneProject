@@ -34,6 +34,7 @@ function App() {
     const [heatmapData, setHeatmapData] = useState([]);
     const [histogramData, setHistogramData] = useState([]);
     const [selectedAnalyticsCode, setSelectedAnalyticsCode] = useState('');
+    const [canAnswer, setCanAnswer] = useState(false);
 
     // 1. Save Qualitative Student Reflection
     const handleReflectionSubmit = async (e) => {
@@ -133,6 +134,18 @@ function App() {
                 .catch((err) => console.error("Error fetching prompts:", err));
         }
     }, [view]);
+
+// Reset reading timer & hide buttons for 2 seconds on every new prompt
+    useEffect(() => {
+        if (view === 'walk') {
+            setCanAnswer(false);
+            const timer = setTimeout(() => {
+                setCanAnswer(true);
+            }, 2000); // 2-second reading delay
+
+            return () => clearTimeout(timer);
+        }
+    }, [currentIndex, view]);
 
     // Fetch leaderboard data when walk is completed
     useEffect(() => {
@@ -342,7 +355,11 @@ function App() {
 
     // Handle Prompt Answers
     const handleAnswer = async (answer) => {
-        if (!prompts.length || currentIndex >= prompts.length) return;
+        // Lock execution if timer is running or index is out of bounds
+        if (!canAnswer || !prompts.length || currentIndex >= prompts.length) return;
+
+        // Instantly disable click actions to block rapid spamming
+        setCanAnswer(false);
 
         const currentPrompt = prompts[currentIndex];
 
@@ -380,6 +397,7 @@ function App() {
 
         } catch (err) {
             console.error("Error communicating with server:", err);
+            setCanAnswer(true); // Re-enable on error
         }
     };
 
@@ -904,19 +922,25 @@ function App() {
                 {prompts[currentIndex].prompt_text || prompts[currentIndex].question || prompts[currentIndex].text}
             </h1>
 
-            <div style={{ marginBottom: '30px' }}>
-                <button 
-                    onClick={() => handleAnswer('yes')}
-                    style={{ padding: '8px 24px', fontSize: '18px', cursor: 'pointer' }}
-                >
-                    Yes
-                </button>
-                <button 
-                    onClick={() => handleAnswer('no')}
-                    style={{ padding: '8px 24px', fontSize: '18px', marginLeft: '12px', cursor: 'pointer' }}
-                >
-                    No
-                </button>
+            <div style={{ marginBottom: '30px', minHeight: '50px' }}>
+                {canAnswer ? (
+                    <>
+                        <button 
+                            onClick={() => handleAnswer('yes')}
+                            style={{ padding: '8px 24px', fontSize: '18px', cursor: 'pointer' }}
+                        >
+                            Yes
+                        </button>
+                        <button 
+                            onClick={() => handleAnswer('no')}
+                            style={{ padding: '8px 24px', fontSize: '18px', marginLeft: '12px', cursor: 'pointer' }}
+                        >
+                            No
+                        </button>
+                    </>
+                ) : (
+                    <p style={{ fontStyle: 'italic', color: '#888' }}>Read prompt carefully...</p>
+                )}
             </div>
 
             {feedback === 'ahead' && (
