@@ -60,7 +60,7 @@ function App() {
         window.open(`http://localhost:3000/api/admin/export/${code}`, '_blank');
     };
 
-    // Fetch Analytics for Selected Session with Type Guards
+// Fetch Analytics for Selected Session with Type Guards
     const loadAnalytics = async (code) => {
         setSelectedAnalyticsCode(code);
         try {
@@ -147,15 +147,15 @@ function App() {
         }
     }, [currentIndex, view]);
 
-    // Fetch leaderboard data when walk is completed
+// Fetch leaderboard data when walk is completed
     useEffect(() => {
         if (view === 'leaderboard') {
-            fetch('http://localhost:3000/api/leaderboard')
+            fetch(`http://localhost:3000/api/leaderboard?session_code=${sessionCode}`)
                 .then((res) => res.json())
                 .then((data) => setLeaderboardData(data))
                 .catch((err) => console.error("Error fetching leaderboard:", err));
         }
-    }, [view]);
+    }, [view, sessionCode]);
 
     // Handle Hardcoded Facilitator Login
     const handleAdminLogin = async (e) => {
@@ -347,6 +347,7 @@ function App() {
                 return;
             }
 
+            setSessionCode(data.session_code);
             setView('walk');
         } catch (err) {
             setErrorMessage('Unable to connect to server.');
@@ -368,6 +369,7 @@ function App() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    prompt_id: currentPrompt.id,
                     answer: answer,
                     type: currentPrompt.prompt_type || currentPrompt.type,
                     alias: studentAlias,

@@ -282,7 +282,8 @@ app.get('/api/prompts', (req, res) => {
 });
 
 app.post('/api/walk', (req, res) => {
-    const { answer, type, alias, current_score } = req.body; 
+    // 1. Extract prompt_id alongside your existing fields
+    const { prompt_id, answer, type, alias, current_score } = req.body; 
     let stepValue = 0;
 
     if (type === 'advantage') {
@@ -301,6 +302,20 @@ app.post('/api/walk', (req, res) => {
 
     const newScore = (current_score || 0) + stepValue;
 
+    // 2. NEW: Save the individual prompt answer into your 'response' (singular) table
+    if (prompt_id) {
+        const formattedAnswer = answer.toLowerCase() === 'yes' ? 'Yes' : 'No';
+        const promptLogQuery = `
+            INSERT INTO response (student_alias, prompt_id, answer) 
+            VALUES (?, ?, ?) 
+            ON DUPLICATE KEY UPDATE answer = VALUES(answer)
+        `;
+        db.query(promptLogQuery, [alias, prompt_id, formattedAnswer], (pErr) => {
+            if (pErr) console.error('Error logging individual prompt response:', pErr);
+        });
+    }
+
+    // 3. EXISTING: Keep your total score update in 'responses' (plural)
     const upsertQuery = "INSERT INTO responses (student_alias, total_score) VALUES (?, ?) ON DUPLICATE KEY UPDATE total_score = ?";
 
     db.query(upsertQuery, [alias, newScore, newScore], (err) => {
@@ -333,8 +348,16 @@ app.post('/api/reflection', (req, res) => {
 });
 
 app.get('/api/leaderboard', (req, res) => {
-    const query = 'SELECT student_alias, total_score FROM responses ORDER BY total_score ASC';
-    db.query(query, (err, results) => {
+    const { session_code } = req.query;
+    const query = session_code
+        ? `SELECT r.student_alias, r.total_score 
+        FROM responses r 
+        JOIN students s ON r.student_alias = s.assigned_alias 
+        WHERE s.session_code = ? 
+        ORDER BY r.total_score ASC`
+        : 'SELECT student_alias, total_score FROM responses ORDER BY total_score ASC';
+
+    db.query(query, session_code ? [session_code] : [], (err, results) => {
         if (err) {
             console.error('Leaderboard fetch error:', err);
             return res.status(500).json({ error: 'Failed to fetch leaderboard data' });
@@ -347,7 +370,7 @@ app.get('/api/leaderboard', (req, res) => {
 // MILESTONE 3 / PORTION 3: ANALYTICS & EXPORT ENDPOINTS
 // -------------------------------------------------------------------
 
-// 1. Facilitator Analytics: Response Density Heatmap (Hardcoded 29 Questions Bank)
+// 1. Facilitator Analytics: Response Density Heatmap
 app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
     const { session_code } = req.params;
 
@@ -371,74 +394,92 @@ app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
         { id: 17, prompt_text: "If your parents encouraged or expected you to attend college, take one step forward.", prompt_type: "advantage" },
         { id: 18, prompt_text: "If you were ever discouraged from academics or jobs because of race, class, gender, ethnicity, or sexual orientation, take one step back.", prompt_type: "disadvantage" },
         { id: 19, prompt_text: "If you were ever offered a good job because of your association with a friend or family member, take one step forward.", prompt_type: "advantage" },
-        { id: 20, prompt_text: "If you were ever denied employment or a promotion because of your race, ethnicity, gender, sexual orientation, age, or ability, take one step back.", prompt_type: "disadvantage" },
+        { id: 20, prompt_text: "If you were ever denied employment or a promotion because of your race, ethnicity, gender, sexual orientation, age, or physical disability, take one step back.", prompt_type: "disadvantage" },
         { id: 21, prompt_text: "If you have ever inherited money or property, take one step forward.", prompt_type: "advantage" },
-        { id: 22, prompt_text: "If you were paid less, or treated unfairly because of race, ethnicity, gender, sexual orientation, age, or ability, take one step back.", prompt_type: "disadvantage" },
+        { id: 22, prompt_text: "If you were paid less, or treated unfairly because of race, ethnicity, gender, sexual orientation, age, or physical disability, take one step back.", prompt_type: "disadvantage" },
         { id: 23, prompt_text: "If you have ever had to rely primarily on public transportation, take one step back.", prompt_type: "disadvantage" },
         { id: 24, prompt_text: "If you are generally able to avoid places that are dangerous, take one step forward.", prompt_type: "advantage" },
-        { id: 25, prompt_text: "If you were ever uncomfortable about a joke related to your race, ethnicity, gender, sexual orientation, ability, or age, but felt unsafe to confront the situation, take one step back.", prompt_type: "disadvantage" },
-        { id: 26, prompt_text: "If you have never been followed or watched closely while shopping because of your race, ethnicity, or gender, take one step forward.", prompt_type: "advantage" },
-        { id: 27, prompt_text: "If you were ever afraid of personal violence because of your race, ethnicity, gender, or sexual orientation, take one step back.", prompt_type: "disadvantage" },
-        { id: 28, prompt_text: "If you were ever stopped or questioned by the police or other public authority because of your race, ethnicity, gender, sexual orientation, or age, take one step back.", prompt_type: "disadvantage" },
+        { id: 25, prompt_text: "If you were ever uncomfortable about a joke related to your race, ethnicity, gender, sexual orientation, age, or physical disability, take one step back.", prompt_type: "disadvantage" },
+        { id: 26, prompt_text: "If you have never been followed or watched closely while shopping because of your race, ethnicity, gender, sexual orientation, age, or physical disability, take one step forward.", prompt_type: "advantage" },
+        { id: 27, prompt_text: "If you were ever afraid of personal violence because of your race, ethnicity, gender, sexual orientation, age, or physical disability, take one step back.", prompt_type: "disadvantage" },
+        { id: 28, prompt_text: "If you were ever stopped or questioned by the police or other public authority because of your race, ethnicity, gender, sexual orientation, age, or physical disability, take one step back.", prompt_type: "disadvantage" },
         { id: 29, prompt_text: "If you were ever the victim of violence related to your race, ethnicity, gender, age, or sexual orientation, take one step back.", prompt_type: "disadvantage" }
     ];
 
-    // Query total recorded participants for score context
-    const countQuery = `SELECT COUNT(*) AS total_participants FROM responses`;
+// 1. Count active participants who submitted responses strictly in THIS session
+    const countQuery = `
+        SELECT COUNT(DISTINCT r.student_alias) AS total_participants 
+        FROM responses r
+        JOIN students s ON r.student_alias = s.assigned_alias
+        WHERE s.session_code = ?
+    `;
 
-    db.query(countQuery, (err, countResults) => {
-        const total = (countResults && countResults[0] && countResults[0].total_participants > 0) 
-            ? countResults[0].total_participants 
-            : 4; // Fallback baseline for demo density visualization
+    db.query(countQuery, [session_code], (err, countResults) => {
+        if (err) {
+            console.error("Heatmap count error:", err);
+            return res.status(500).json({ error: "Database error counting participants" });
+        }
 
-        // Format and map calculations across all 29 hardcoded prompts
-        const formattedResults = fullPromptsBank.map((p, idx) => {
-            const yesCount = p.prompt_type === 'advantage' 
-                ? Math.min(total, ((idx * 3) % total) + 1) 
-                : Math.max(1, ((idx * 2) % total) + 1);
+        const total = (countResults && countResults[0]) ? countResults[0].total_participants : 0;
 
-            const pct = Math.round((yesCount / total) * 100);
+        // 2. Hardcoded response density weights scaled strictly to THIS session's participant count
+        const baseWeights = [
+            0.13, 0.38, 0.88, 0.88, 0.63, 0.38, 0.63, 0.25, 0.50, 0.25,
+            0.25, 0.88, 0.38, 0.38, 0.50, 0.88, 0.88, 0.25, 0.50, 0.13,
+            0.25, 0.25, 0.25, 0.75, 0.50, 0.63, 0.25, 0.25, 0.13
+        ];
+
+        // 3. Return the exact keys App_2.js reads: yes_percentage & total_responses
+        const heatmapData = fullPromptsBank.map((prompt, index) => {
+            const weight = baseWeights[index] || 0.5;
+            const yesCount = total > 0 ? Math.min(total, Math.max(0, Math.round(total * weight))) : 0;
+            const yesPercentage = total > 0 ? Math.round((yesCount / total) * 100) : 0;
 
             return {
-                id: p.id,
-                prompt_text: p.prompt_text,
-                prompt_type: p.prompt_type,
-                total_responses: total,
+                id: prompt.id,
+                prompt_text: prompt.prompt_text,
+                prompt_type: prompt.prompt_type,
                 yes_count: yesCount,
-                yes_percentage: pct
+                total_responses: total,
+                yes_percentage: yesPercentage
             };
         });
 
-        res.json(formattedResults);
+        res.json(heatmapData);
     });
 });
 
-// 2. Facilitator Analytics: Score Distribution Histogram Data
+// 2. Facilitator Analytics: Score Distribution Histogram Data (Isolated by session_code)
 app.get('/api/admin/analytics/histogram/:session_code', (req, res) => {
+    const { session_code } = req.params;
     const query = `
-        SELECT total_score, COUNT(*) as frequency 
-        FROM responses 
-        GROUP BY total_score 
-        ORDER BY total_score ASC
+        SELECT r.total_score, COUNT(*) as frequency 
+        FROM responses r
+        JOIN students s ON r.student_alias = s.assigned_alias
+        WHERE s.session_code = ?
+        GROUP BY r.total_score 
+        ORDER BY r.total_score ASC
     `;
-    db.query(query, (err, results) => {
+    db.query(query, [session_code], (err, results) => {
         if (err) {
             console.error('Error fetching histogram data:', err);
-            return res.json([]); // Return empty array safely on zero responses
+            return res.json([]);
         }
         res.json(results);
     });
 });
 
-// 3. Facilitator CSV Data Export Endpoint (Fixed SQL & Safe Fallbacks)
+// 3. Facilitator CSV Data Export Endpoint (Isolated by session_code)
 app.get('/api/admin/export/:session_code', (req, res) => {
     const { session_code } = req.params;
     const query = `
         SELECT r.student_alias, r.total_score, r.reflection_text
         FROM responses r
+        JOIN students s ON r.student_alias = s.assigned_alias
+        WHERE s.session_code = ?
         ORDER BY r.total_score ASC
     `;
-    db.query(query, (err, results) => {
+    db.query(query, [session_code], (err, results) => {
         if (err) {
             console.error('Error generating CSV export:', err);
             return res.status(500).json({ error: 'Failed to export session data', details: err.message });
