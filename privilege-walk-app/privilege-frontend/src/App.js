@@ -482,7 +482,7 @@ function App() {
                     {adminSuccessMsg && <p style={{ color: 'green', fontWeight: 'bold' }}>{adminSuccessMsg}</p>}
                     {joinUrl && (
                         <div style={{ padding: '12px 16px', backgroundColor: '#e7f3ff', border: '1px solid #b6d4fe', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
-                            <strong>Student Join URL (Same Wi-Fi):</strong>{' '}
+                            <strong>Student Join URL:</strong>{' '}
                             <code style={{ fontSize: '15px', fontWeight: 'bold' }}>{joinUrl}</code>
                         </div>
                     )}

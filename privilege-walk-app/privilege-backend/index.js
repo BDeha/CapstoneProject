@@ -608,6 +608,24 @@ app.post('/api/walk/reflection', (req, res) => {
 });
 
 app.get('/api/network-info', (req, res) => {
+    // If hosted on Render (or any public domain), return the public HTTPS URL
+    if (process.env.RENDER_EXTERNAL_URL) {
+        return res.json({
+            ip: 'cloud',
+            url: process.env.RENDER_EXTERNAL_URL
+        });
+    }
+
+    const host = req.get('host');
+    if (host && !host.startsWith('localhost') && !host.startsWith('127.0.0.1') && !/^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))\./.test(host)) {
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        return res.json({
+            ip: 'cloud',
+            url: `${protocol}://${host}`
+        });
+    }
+
+    // Otherwise, return the local Wi-Fi LAN IP for desktop/in-person use
     const interfaces = os.networkInterfaces();
     let localIp = 'localhost';
 
