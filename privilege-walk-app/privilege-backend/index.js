@@ -171,8 +171,10 @@ db.serialize(() => {
 
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
+    const validUser = process.env.ADMIN_USER || 'admin';
+    const validPass = process.env.ADMIN_PASS || 'admin123';
 
-    if (username === 'admin' && password === 'admin123') {
+    if (username === validUser && password === validPass) {
         return res.json({ message: 'Facilitator login successful' });
     } else {
         return res.status(401).json({ error: 'Invalid facilitator credentials.' });
@@ -504,38 +506,43 @@ app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
         { id: 29, prompt_text: "If you were ever the victim of violence related to your race, ethnicity, gender, age, or sexual orientation, take one step back.", prompt_type: "disadvantage" }
     ];
 
-    const countQuery = `
-        SELECT COUNT(DISTINCT r.student_alias) AS total_participants
-        FROM responses r
+    const statsQuery = `
+        SELECT 
+            r.prompt_id,
+            COUNT(CASE WHEN LOWER(r.answer) = 'yes' THEN 1 END) AS yes_count,
+            COUNT(r.id) AS total_responses
+        FROM response r
         JOIN students s ON r.student_alias = s.assigned_alias
         WHERE s.session_code = ?
+        GROUP BY r.prompt_id
     `;
 
-    db.get(countQuery, [session_code], (err, countRow) => {
+    db.all(statsQuery, [session_code], (err, rows) => {
         if (err) {
-            console.error('Heatmap count error:', err);
-            return res.status(500).json({ error: 'Database error counting participants' });
+            console.error('Heatmap stats error:', err);
+            return res.status(500).json({ error: 'Database error fetching heatmap stats' });
         }
 
-        const total = countRow ? countRow.total_participants : 0;
+        const statsByPrompt = {};
+        (rows || []).forEach((row) => {
+            statsByPrompt[Number(row.prompt_id)] = {
+                yesCount: Number(row.yes_count) || 0,
+                totalResponses: Number(row.total_responses) || 0
+            };
+        });
 
-        const baseWeights = [
-            0.13, 0.38, 0.88, 0.88, 0.63, 0.38, 0.63, 0.25, 0.50, 0.25,
-            0.25, 0.88, 0.38, 0.38, 0.50, 0.88, 0.88, 0.25, 0.50, 0.13,
-            0.25, 0.25, 0.25, 0.75, 0.50, 0.63, 0.25, 0.25, 0.13
-        ];
-
-        const heatmapData = fullPromptsBank.map((prompt, index) => {
-            const weight = baseWeights[index] || 0.5;
-            const yesCount = total > 0 ? Math.min(total, Math.max(0, Math.round(total * weight))) : 0;
-            const yesPercentage = total > 0 ? Math.round((yesCount / total) * 100) : 0;
+        const heatmapData = fullPromptsBank.map((prompt) => {
+            const stats = statsByPrompt[prompt.id] || { yesCount: 0, totalResponses: 0 };
+            const yesPercentage = stats.totalResponses > 0
+                ? Math.round((stats.yesCount / stats.totalResponses) * 100)
+                : 0;
 
             return {
                 id: prompt.id,
                 prompt_text: prompt.prompt_text,
                 prompt_type: prompt.prompt_type,
-                yes_count: yesCount,
-                total_responses: total,
+                yes_count: stats.yesCount,
+                total_responses: stats.totalResponses,
                 yes_percentage: yesPercentage
             };
         });
