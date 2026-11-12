@@ -1,0 +1,57 @@
+name: Build Cross-Platform Desktop Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            cmd: npm run build
+          - os: macos-latest
+            cmd: npm run build:mac
+          - os: ubuntu-latest
+            cmd: npm run build:linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend dependencies
+        working-directory: privilege-walk-app/privilege-backend
+        run: npm install
+
+      - name: Install frontend dependencies & build React UI
+        working-directory: privilege-walk-app/privilege-frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Install Electron dependencies & package installer
+        working-directory: privilege-walk-app
+        run: |
+          npm install
+          ${{ matrix.cmd }}
+
+      - name: Upload installers to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            privilege-walk-app/dist/*.exe
+            privilege-walk-app/dist/*.dmg
+            privilege-walk-app/dist/*.AppImage
