@@ -4,6 +4,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const app = express();
 
@@ -590,6 +591,26 @@ app.post('/api/walk/reflection', (req, res) => {
             return res.status(500).json({ error: 'Failed to save reflection response.' });
         }
         res.json({ message: 'Reflection submitted successfully.' });
+    });
+});
+
+app.get('/api/network-info', (req, res) => {
+    const interfaces = os.networkInterfaces();
+    let localIp = 'localhost';
+
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                localIp = iface.address;
+                break;
+            }
+        }
+        if (localIp !== 'localhost') break;
+    }
+
+    res.json({
+        ip: localIp,
+        url: `http://${localIp}:3000`
     });
 });
 

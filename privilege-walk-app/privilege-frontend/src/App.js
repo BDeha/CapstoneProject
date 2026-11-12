@@ -22,6 +22,7 @@ function App() {
     const [activeSessions, setActiveSessions] = useState([]);
     const [allSessions, setAllSessions] = useState([]);
     const [sessionTab, setSessionTab] = useState('active'); // 'active' | 'history'
+    const [joinUrl, setJoinUrl] = useState('');
 
     // Privilege Walk, Reflection & Analytics States
     const [prompts, setPrompts] = useState([]);
@@ -42,7 +43,7 @@ function App() {
         if (!reflectionText.trim()) return;
 
         try {
-            const res = await fetch('http://localhost:3000/api/walk/reflection', {
+            const res = await fetch('/api/walk/reflection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ alias: studentAlias, reflection: reflectionText })
@@ -57,14 +58,14 @@ function App() {
 
     // 2. Export Session Analytics as CSV
     const handleExportCSV = (code) => {
-        window.open(`http://localhost:3000/api/admin/export/${code}`, '_blank');
+        window.open(`/api/admin/export/${code}`, '_blank');
     };
 
 // Fetch Analytics for Selected Session with Type Guards
     const loadAnalytics = async (code) => {
         setSelectedAnalyticsCode(code);
         try {
-            const heatRes = await fetch(`http://localhost:3000/api/admin/analytics/heatmaps/${code}`);
+            const heatRes = await fetch(`/api/admin/analytics/heatmaps/${code}`);
             const heatJson = await heatRes.json();
             
             console.log("Heatmap API Response:", heatJson); // Debug log
@@ -75,7 +76,7 @@ function App() {
                 setHeatmapData([]);
             }
 
-            const histRes = await fetch(`http://localhost:3000/api/admin/analytics/histogram/${code}`);
+            const histRes = await fetch(`/api/admin/analytics/histogram/${code}`);
             const histJson = await histRes.json();
             setHistogramData(Array.isArray(histJson) ? histJson : []);
         } catch (err) {
@@ -88,7 +89,7 @@ function App() {
     // Fetch active sessions from backend
     const fetchActiveSessions = async () => {
         try {
-            const res = await fetch('http://localhost:3000/api/sessions/active');
+            const res = await fetch('/api/sessions/active');
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const data = await res.json();
             if (Array.isArray(data)) {
@@ -102,7 +103,7 @@ function App() {
     // Fetch all sessions history from backend
     const fetchAllSessions = async () => {
         try {
-            const res = await fetch('http://localhost:3000/api/sessions/all');
+            const res = await fetch('/api/sessions/all');
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const data = await res.json();
             if (Array.isArray(data)) {
@@ -118,13 +119,17 @@ function App() {
         if (view === 'admin_dashboard' && isAdminAuthenticated) {
             fetchActiveSessions();
             fetchAllSessions();
+            fetch('/api/network-info')
+                .then((res) => res.json())
+                .then((data) => setJoinUrl(data.url))
+                .catch((err) => console.error('Error fetching network info:', err));
         }
     }, [view, isAdminAuthenticated, sessionTab]);
 
     // Fetch all prompts when walk view becomes active
     useEffect(() => {
         if (view === 'walk') {
-            fetch('http://localhost:3000/api/prompts')
+            fetch('/api/prompts')
                 .then((res) => res.json())
                 .then((data) => {
                     if (Array.isArray(data) && data.length > 0) {
@@ -150,7 +155,7 @@ function App() {
 // Fetch leaderboard data when walk is completed
     useEffect(() => {
         if (view === 'leaderboard') {
-            fetch(`http://localhost:3000/api/leaderboard?session_code=${sessionCode}`)
+            fetch(`/api/leaderboard?session_code=${sessionCode}`)
                 .then((res) => res.json())
                 .then((data) => setLeaderboardData(data))
                 .catch((err) => console.error("Error fetching leaderboard:", err));
@@ -163,7 +168,7 @@ function App() {
         setErrorMessage('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/admin/login', {
+            const response = await fetch('/api/admin/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -195,7 +200,7 @@ function App() {
         setAdminSuccessMsg('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/sessions/create', {
+            const response = await fetch('/api/sessions/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -244,7 +249,7 @@ function App() {
         setAdminSuccessMsg('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/sessions/end', {
+            const response = await fetch('/api/sessions/end', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_code: codeToEnd })
@@ -275,7 +280,7 @@ function App() {
         setAdminSuccessMsg('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/sessions/delete', {
+            const response = await fetch('/api/sessions/delete', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_code: codeToDelete })
@@ -302,7 +307,7 @@ function App() {
         setErrorMessage('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/students/register', {
+            const response = await fetch('/api/students/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -332,7 +337,7 @@ function App() {
         setErrorMessage('');
 
         try {
-            const response = await fetch('http://localhost:3000/api/students/login', {
+            const response = await fetch('/api/students/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -365,7 +370,7 @@ function App() {
         const currentPrompt = prompts[currentIndex];
 
         try {
-            const response = await fetch('http://localhost:3000/api/walk', {
+            const response = await fetch('/api/walk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -475,6 +480,12 @@ function App() {
                     <h2>Facilitator Portal</h2>
                     {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
                     {adminSuccessMsg && <p style={{ color: 'green', fontWeight: 'bold' }}>{adminSuccessMsg}</p>}
+                    {joinUrl && (
+                        <div style={{ padding: '12px 16px', backgroundColor: '#e7f3ff', border: '1px solid #b6d4fe', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
+                            <strong>Student Join URL (Same Wi-Fi):</strong>{' '}
+                            <code style={{ fontSize: '15px', fontWeight: 'bold' }}>{joinUrl}</code>
+                        </div>
+                    )}
 
                     {/* CREATE SESSION SECTION */}
                     <div style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px', marginBottom: '25px', backgroundColor: '#fafafa' }}>
