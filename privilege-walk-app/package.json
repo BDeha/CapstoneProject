@@ -13,7 +13,7 @@
   "type": "commonjs",
   "build": {
     "appId": "com.bdeha.privilegewalk",
-    "productName": "Privilege Walk Polling App",
+    "productName": "Privilege Walk App",
     "directories": {
       "output": "dist"
     },

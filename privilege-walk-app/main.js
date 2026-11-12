@@ -29,6 +29,7 @@ async function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
+        title: 'Privilege Walk App',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true

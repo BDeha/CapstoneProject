@@ -1,4 +1,4 @@
-# Privilege Walk Polling Application
+# Privilege Walk App
 
 An interactive classroom polling web and desktop application built with a **React** frontend, **Node.js / Express** backend, **MySQL** database, and **Electron** desktop wrapper for real-time local-network deployment.
 
@@ -43,4 +43,4 @@ CapstoneProject/
    cd privilege-walk-app
    npm run build
    ```
-   The compiled NSIS installer (`Privilege Walk Polling App Setup 1.0.0.exe`) is generated in `privilege-walk-app/dist/`.
+   The compiled NSIS installer (`Privilege Walk App Setup 1.0.0.exe`) is generated in `privilege-walk-app/dist/`.
