@@ -9,29 +9,8 @@ const os = require('os');
 const app = express();
 
 // Clean Network CORS Policy: Explicitly allow local origins & preflight OPTIONS
-const allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001'
-];
-
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-
-        const isAllowed = allowedOrigins.includes(origin) ||
-            /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin) ||
-            /^https:\/\/.*\.trycloudflare\.com$/.test(origin) ||
-            /^https:\/\/.*\.ngrok-free\.app$/.test(origin);
-            /^https:\/\/.*\.onrender\.com$/.test(origin);
-
-        if (isAllowed) {
-            callback(null, true);
-        } else {
-            callback(new Error('Blocked by CORS policy: Unauthorized Origin.'));
-        }
-    },
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -654,6 +633,11 @@ app.use(express.static(path.join(__dirname, '../privilege-frontend/build')));
 // Fallback route for React Router (Express v5 compatible)
 app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '../privilege-frontend/build', 'index.html'));
+});
+
+app.use((err, req, res, next) => {
+    console.error('Express error:', err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
 const PORT = process.env.PORT || 3000;
