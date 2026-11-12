@@ -7,6 +7,10 @@
     "start": "electron .",
     "build": "electron-builder --win"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "build": {
     "appId": "com.bdeha.privilegewalk",
     "productName": "Privilege Walk Polling App",
@@ -19,13 +23,19 @@
       "privilege-backend/**/*",
       "privilege-frontend/build/**/*"
     ],
+    "asarUnpack": [
+      "privilege-backend/**/*",
+      "privilege-frontend/build/**/*"
+    ],
     "win": {
       "target": "nsis"
     }
   },
+  "dependencies": {
+    "wait-on": "^9.5.1"
+  },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
-    "wait-on": "^8.0.0"
+    "electron": "^45.3.1",
+    "electron-builder": "^26.18.0"
   }
 }

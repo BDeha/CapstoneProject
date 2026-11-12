@@ -9,9 +9,12 @@ const SERVER_PORT = 3000; // Update if your Express server uses a different port
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 
 function startBackend() {
-    const backendPath = path.join(__dirname, 'privilege-backend', 'index.js'); // Update if entry file is server.js or app.js
+    const baseDir = __dirname.replace('app.asar', 'app.asar.unpacked');
+    const backendDir = path.join(baseDir, 'privilege-backend');
+    const backendPath = path.join(backendDir, 'index.js');
+
     backendProcess = spawn(process.execPath, [backendPath], {
-        cwd: path.join(__dirname, 'privilege-backend'),
+        cwd: backendDir,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
         stdio: 'inherit'
     });
