@@ -2,28 +2,32 @@
 node_modules/
 **/node_modules/
 
-# Environment variables & secrets
+# Production Builds & Electron Packaging
+privilege-walk-app/privilege-frontend/build/
+dist/
+out/
+release/
+
+# Local SQLite Databases (prevent test data from being committed)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment Variables & Secrets
 .env
 .env.local
-.env.*.local
-**/.env
-
-# React production build
-privilege-frontend/build/
-build/
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS & Editor files
+# OS & Editor Files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-dist/
-**/dist/
-
-*.db

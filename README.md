@@ -1,81 +1,109 @@
-# Privilege Walk App
+# Interactive Privilege Walk Workshop Web Application
 
-An interactive classroom polling web and cross-platform desktop application built with a **React** frontend, **Node.js / Express** backend, embedded **SQLite** database, and **Electron** desktop wrapper for zero-setup, real-time local-network deployment.
+An interactive full-stack web and local desktop application built for facilitating live, anonymous **Privilege Walk** workshops in classrooms and community events. Participants respond to 29 structured socio-economic and identity prompts under a randomized anonymous alias (`User_XXXX`), observe their relative position along a live class spectrum, submit qualitative post-walk reflections, and generate real-time analytics for facilitators.
 
-## Project Structure
+**Live Hosted App:** [https://capstoneproject-re11.onrender.com](https://capstoneproject-re11.onrender.com)
+
+> **Important Note on Live Link Wake-Up Time:** The public deployment is hosted on Render's free tier, which automatically spins down the server after **15 minutes of inactivity**. If nobody has visited the link recently, the very first request may take **~50 seconds** to wake the server up. All sessions, student accounts, scores, and reflections are stored externally in Turso Cloud SQLite and remain permanently saved across sleep cycles. *(Facilitator tip: Open the link ~1 minute before starting a live workshop so it loads instantaneously for participants.)*
+
+---
+
+## Core Features
+
+### Student / Participant Portal
+* **Session-Gated Registration:** Students join an active workshop using a facilitator-provided **Session Join Code** and receive an auto-generated anonymous alias (`User_XXXX`) to protect privacy while keeping real identities separated in the database.
+* **Timed 29-Prompt Privilege Walk:** Displays 29 advantage/disadvantage prompts one at a time with a 2-second reading buffer before enabling **Yes / No** responses, automatically calculating cumulative position scores (`+1`, `0`, or `-1`).
+* **Class Position Spectrum:** Visualizes every participant's final score along a horizontal spectrum (`Further Behind` ↔ `Furthest Ahead`) upon completion.
+* **Post-Walk Reflection Module:** Collects qualitative student reflections tied to their anonymous alias.
+
+### Facilitator / Admin Portal
+* **Session Lifecycle Management:** Create, re-activate, close (`end`), or permanently delete workshop sessions with automatic expiration windows.
+* **Automatic Student Join URL:** Displays the active join link (automatically detecting the public cloud URL in production or the host's local Wi-Fi IP address when run offline).
+* **Real-Time Response Density Heatmap:** Color-coded breakdown across all 29 prompts (`Q1`–`Q29`) showing exact `Yes` percentages and live response counts for any selected session.
+* **Score Distribution Histogram & CSV Export:** Displays class score frequency distributions and exports anonymized session results (`Student Alias, Total Score, Reflection Response`) to CSV.
+
+---
+
+## Tech Stack
+* **Frontend:** React (`react-scripts`), HTML5, CSS3
+* **Backend:** Node.js, Express v5, `bcryptjs`, `cors`
+* **Database:** `@libsql/client` supporting both **Turso** (cloud SQLite for persistent 24/7 hosting) and **local embedded SQLite** (`privilege_walk.db` for zero-setup offline/LAN workshops)
+* **Cloud Hosting:** Render (Web Service) + Turso (Cloud SQLite)
+
+---
+
+## Repository Structure
 
 ```text
 CapstoneProject/
-├── .github/
-│   └── workflows/
-│       └── build-release.yml # GitHub Actions CI/CD workflow for cross-platform builds
 ├── .gitignore
 ├── README.md
 └── privilege-walk-app/
-    ├── main.js               # Electron main process entry point
-    ├── package.json          # Electron & electron-builder configuration
-    ├── privilege-backend/    # Node.js & Express API server (with embedded SQLite)
-    ├── privilege-frontend/   # React client application
-    ├── capstone table.sql    # Legacy MySQL reference schema & 29 prompts
-    ├── start_walk.bat        # Windows launcher for standalone web mode
-    └── stop_walk.bat         # Windows shutdown script
+    ├── privilege-frontend/       # React client application
+    │   ├── public/
+    │   └── src/
+    │       └── App.js
+    └── privilege-backend/        # Express REST API + static build server
+        ├── index.js
+        └── package.json
 ```
 
-## Quick Start (End Users — Zero Setup)
+---
 
-Download the pre-built installer for your operating system from the **[GitHub Releases](https://github.com/BDeha/CapstoneProject/releases)** page—no Node.js, terminal commands, or external database server required:
+## Running Locally (Offline / Same Wi-Fi Mode)
 
-* **Windows:** `Privilege Walk App Setup 1.0.0.exe`
-* **macOS:** `Privilege Walk App-1.0.0.dmg`
-* **Linux:** `Privilege Walk App-1.0.0.AppImage`
+You can run the entire application locally with zero external cloud accounts—when `TURSO_DATABASE_URL` is not set, the backend automatically creates and seeds a local `privilege_walk.db` SQLite file.
 
-### Running a Classroom Session
-1. **Facilitator / Host Computer:**
-   * Install and open **Privilege Walk App** (on Windows, click **More info → Run anyway** if SmartScreen prompts; on macOS, right-click the app in Applications → **Open** on first launch).
-   * The embedded SQLite database (`privilege_walk.db`) initializes automatically on first startup and pre-loads all 29 Privilege Walk prompts.
-   * Log in to the Facilitator Dashboard (`admin` / `admin123`) to create a timed session and generate a Session Code.
-2. **Students / Participants:**
-   * No installation is needed. Connect any phone, tablet, or laptop to the **same Wi-Fi / local network** as the host computer.
-   * Open a browser and navigate to `http://<HOST-LOCAL-IP>:3000` (for example, `http://192.168.1.42:3000`), register with the active Session Code, and participate in real time.
+### Prerequisites
+* [Node.js](https://nodejs.org/) (v18 or newer)
 
-## Setup & Local Usage (Developer Web Mode)
+### Setup & Launch
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/BDeha/CapstoneProject.git](https://github.com/BDeha/CapstoneProject.git)
+   cd CapstoneProject/privilege-walk-app
+   ```
 
-If you want to run the Express server and React frontend directly without the Electron desktop wrapper:
-
-1. **Install Dependencies:** Run `npm install` inside both `privilege-walk-app/privilege-backend` and `privilege-walk-app/privilege-frontend`.
-2. **Build Frontend:** Run `npm run build` inside `privilege-walk-app/privilege-frontend` so Express can serve the production UI.
-3. **Start the Application:** Double-click `privilege-walk-app/start_walk.bat` (or run `node index.js` inside `privilege-backend`) to launch the server on port `3000`.
-   * *Note:* The SQLite database (`privilege_walk.db`) is created automatically inside `privilege-backend/` on first run.
-4. **Stop the Application:** Double-click `privilege-walk-app/stop_walk.bat` to terminate running Node processes.
-
-## Building the Desktop Application (Electron)
-
-To run or compile the Electron desktop wrapper from source:
-
-1. **Install Electron Dependencies:**
-   ```powershell
-   cd privilege-walk-app
+2. **Install dependencies and build the React frontend:**
+   ```bash
+   cd privilege-frontend
    npm install
+   npm run build
    ```
-2. **Run Desktop App in Development:**
-   ```powershell
-   cd privilege-walk-app
-   npm start
+
+3. **Install backend dependencies and start the server:**
+   ```bash
+   cd ../privilege-backend
+   npm install
+   node index.js
    ```
-3. **Build Platform Installers:**
-   * **Windows (`.exe`):**
-     ```powershell
-     cd privilege-walk-app
-     npm run build
-     ```
-   * **macOS (`.dmg`):**
-     ```bash
-     cd privilege-walk-app
-     npm run build:mac
-     ```
-   * **Linux (`.AppImage`):**
-     ```bash
-     cd privilege-walk-app
-     npm run build:linux
-     ```
-   Compiled installers are output to `privilege-walk-app/dist/`. Pushing a `v*` tag (e.g., `v1.0.0`) automatically builds and attaches all three platform installers to a GitHub Release via `.github/workflows/build-release.yml`.
+
+4. **Open the application:**
+   * **Facilitator / Host:** Visit `http://localhost:3000`
+   * **Default Local Facilitator Credentials:** Username `admin` / Password `admin123`
+   * **Local Wi-Fi Participants:** Share the `http://<YOUR-LOCAL-IP>:3000` URL displayed at the top of the Facilitator Portal with devices on the same network.
+
+---
+
+## Cloud Deployment Configuration (Render + Turso)
+
+To deploy your own free, persistent cloud instance:
+
+1. **Database (Turso):** Create a free SQLite database at [turso.tech](https://turso.tech) and generate a **Database URL** (`libsql://...`) and **Auth Token**.
+2. **Web Service (Render):** Connect this repository to a free Node Web Service on [render.com](https://render.com) with:
+   * **Root Directory:** `privilege-walk-app`
+   * **Build Command:** `cd privilege-frontend && npm install && npm run build && cd ../privilege-backend && npm install`
+   * **Start Command:** `node privilege-backend/index.js`
+3. **Environment Variables:** Configure the following keys in Render:
+
+| Variable | Description |
+| :--- | :--- |
+| `TURSO_DATABASE_URL` | Your Turso database URL (`libsql://privilege-walk-...turso.io`) |
+| `TURSO_AUTH_TOKEN` | Your Turso authentication token |
+| `ADMIN_USER` | Custom Facilitator Portal username (defaults to `admin` if unset) |
+| `ADMIN_PASS` | Custom Facilitator Portal password (defaults to `admin123` if unset) |
+
+---
+
+## Author
+* **Benny-Hardy L. Deha** — Senior Computer Science Capstone Project, Mount Saint Mary's University (2026)
