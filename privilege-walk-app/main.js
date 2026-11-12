@@ -5,7 +5,7 @@ const waitOn = require('wait-on');
 
 let mainWindow;
 let backendProcess;
-const SERVER_PORT = 3000; // Update if your Express server uses a different port
+const SERVER_PORT = 3000;
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 
 function startBackend() {
@@ -15,7 +15,11 @@ function startBackend() {
 
     backendProcess = spawn(process.execPath, [backendPath], {
         cwd: backendDir,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env: {
+            ...process.env,
+            ELECTRON_RUN_AS_NODE: '1',
+            DB_DIR: app.getPath('userData')
+        },
         stdio: 'inherit'
     });
 }
@@ -23,7 +27,6 @@ function startBackend() {
 async function createWindow() {
     startBackend();
 
-    // Wait until Express is listening before opening the window
     await waitOn({ resources: [SERVER_URL], timeout: 15000 });
 
     mainWindow = new BrowserWindow({

@@ -1,10 +1,11 @@
-const express = require('express'); 
-const cors = require('cors');        
-const mysql = require('mysql2');     
+const express = require('express');
+const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 
-const app = express();               
+const app = express();
 
 // Clean Network CORS Policy: Explicitly allow local origins & preflight OPTIONS
 const allowedOrigins = [
@@ -16,12 +17,10 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like Postman or server-to-server calls)
         if (!origin) return callback(null, true);
 
-        // Match local ports OR local network IP addresses (192.168.x.x, 10.x.x.x, 172.x.x.x)
-        const isAllowed = allowedOrigins.includes(origin) || 
-                        /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin);
+        const isAllowed = allowedOrigins.includes(origin) ||
+            /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin);
 
         if (isAllowed) {
             callback(null, true);
@@ -34,29 +33,128 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json());             
+app.use(express.json());
 
-// MySQL Database Connection Pool
-const db = mysql.createPool({
-    host: '127.0.0.1',
-    port: 3306,
-    user: 'root',
-    password: '',
-    database: 'privilege_walk',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+// Initialize Embedded SQLite Database (Zero external DB installation required)
+const dbFolder = process.env.DB_DIR || __dirname;
+if (!fs.existsSync(dbFolder)) {
+    fs.mkdirSync(dbFolder, { recursive: true });
+}
+const dbPath = path.join(dbFolder, 'privilege_walk.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('Failed to connect to SQLite database:', err);
+    } else {
+        console.log('Connected to embedded SQLite database at:', dbPath);
+    }
 });
 
-// app.get('/', (req, res) => {
-//     res.send('The Privilege Walk Server is Live!');
-// });
+// Auto-create schema and seed 29 prompts on first run
+db.serialize(() => {
+    db.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_name TEXT NOT NULL,
+            session_code TEXT NOT NULL UNIQUE,
+            status TEXT DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS student_identities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            real_name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            assigned_alias TEXT NOT NULL UNIQUE,
+            session_code TEXT NOT NULL
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assigned_alias TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            session_code TEXT NOT NULL
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT NOT NULL,
+            type TEXT NOT NULL
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS response (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_alias TEXT NOT NULL,
+            prompt_id INTEGER NOT NULL,
+            answer TEXT NOT NULL,
+            UNIQUE(student_alias, prompt_id)
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_alias TEXT NOT NULL UNIQUE,
+            total_score INTEGER DEFAULT 0,
+            reflection_text TEXT
+        )
+    `);
+
+    // Seed the 29 prompts if the prompts table is empty
+    db.get('SELECT COUNT(*) AS count FROM prompts', (err, row) => {
+        if (!err && row && row.count === 0) {
+            const initialPrompts = [
+                ["If your primary ethnic identity is 'American', take one step forward.", 'advantage'],
+                ['If your parents did not grow up in the United States, take one step back.', 'disadvantage'],
+                ['If your parents were professionals (doctors, lawyers, teachers), take one step forward.', 'advantage'],
+                ['If one of your parents was unemployed or laid off work, take one step back.', 'disadvantage'],
+                ['If your parents owned the house where you grew up, take one step forward.', 'advantage'],
+                ['If your family ever had to move because they could not afford the rent, take one step back.', 'disadvantage'],
+                ['If you saw members of your race, ethnic group, gender, or sexual orientation portrayed on television in degrading or devalued roles, take one step back.', 'disadvantage'],
+                ['If you studied the culture of your ancestors in elementary school, take one step forward.', 'advantage'],
+                ['If you never went to summer camp as a child, take one step back.', 'disadvantage'],
+                ['If you attended a private or parochial elementary or high school, take one step forward.', 'advantage'],
+                ['If you went to elementary or high school in the US speaking a language other than English, take one step back.', 'disadvantage'],
+                ['If your parents told you that you could be anything you wanted to be, take one step forward.', 'advantage'],
+                ['If you were raised in a single-parent household, take one step back.', 'disadvantage'],
+                ['If there were fewer than 50 books in your house when you were growing up, take one step back.', 'disadvantage'],
+                ['If you were never taken to art galleries or theater performances by your parents, take one step back.', 'disadvantage'],
+                ['If you were told by your parents that you were attractive, smart, and capable, take one step forward.', 'advantage'],
+                ['If your parents encouraged or expected you to attend college, take one step forward.', 'advantage'],
+                ['If you were ever discouraged from academics or jobs because of race, class, gender, ethnicity, or sexual orientation, take one step back.', 'disadvantage'],
+                ['If you were ever offered a good job because of your association with a friend or family member, take one step forward.', 'advantage'],
+                ['If you were ever denied employment or a promotion because of your race, ethnicity, gender, sexual orientation, age, or ability, take one step back.', 'disadvantage'],
+                ['If you have ever inherited money or property, take one step forward.', 'advantage'],
+                ['If you were paid less, or treated unfairly because of race, ethnicity, gender, sexual orientation, age, or ability, take one step back.', 'disadvantage'],
+                ['If you have ever had to rely primarily on public transportation, take one step back.', 'disadvantage'],
+                ['If you are generally able to avoid places that are dangerous, take one step forward.', 'advantage'],
+                ['If you were ever uncomfortable about a joke related to your race, ethnicity, gender, sexual orientation, ability, or age, but felt unsafe to confront the situation, take one step back.', 'disadvantage'],
+                ['If you have never been followed or watched closely while shopping because of your race, ethnicity, or gender, take one step forward.', 'advantage'],
+                ['If you were ever afraid of personal violence because of your race, ethnicity, gender, or sexual orientation, take one step back.', 'disadvantage'],
+                ['If you were ever stopped or questioned by the police or other public authority because of your race, ethnicity, gender, sexual orientation, or age, take one step back.', 'disadvantage'],
+                ['If you were ever the victim of violence related to your race, ethnicity, gender, age, or sexual orientation, take one step back.', 'disadvantage']
+            ];
+
+            const stmt = db.prepare('INSERT INTO prompts (question, type) VALUES (?, ?)');
+            initialPrompts.forEach(([question, type]) => stmt.run(question, type));
+            stmt.finalize();
+            console.log('Seeded 29 Privilege Walk prompts into SQLite.');
+        }
+    });
+});
 
 // -------------------------------------------------------------------
 // FACILITATOR / ADMIN ENDPOINTS
 // -------------------------------------------------------------------
 
-// Hardcoded Facilitator Login Endpoint
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
 
@@ -67,7 +165,6 @@ app.post('/api/admin/login', (req, res) => {
     }
 });
 
-// Facilitator Endpoint: Create or Re-activate a Named Walk Session
 app.post('/api/sessions/create', (req, res) => {
     const { session_name, session_code, duration_hours } = req.body;
 
@@ -79,18 +176,18 @@ app.post('/api/sessions/create', (req, res) => {
     const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
 
     const upsertSessionQuery = `
-        INSERT INTO sessions (session_name, session_code, status, expires_at) 
+        INSERT INTO sessions (session_name, session_code, status, expires_at)
         VALUES (?, ?, 'active', ?)
-        ON DUPLICATE KEY UPDATE 
-            session_name = VALUES(session_name), 
-            status = 'active', 
-            expires_at = VALUES(expires_at)
+        ON CONFLICT(session_code) DO UPDATE SET
+            session_name = excluded.session_name,
+            status = 'active',
+            expires_at = excluded.expires_at
     `;
 
-    db.query(upsertSessionQuery, [session_name, session_code, expiresAt], (err, result) => {
+    db.run(upsertSessionQuery, [session_name, session_code, expiresAt], function (err) {
         if (err) {
             console.error('Error creating/reactivating session:', err);
-            return res.status(500).json({ error: `Database error: ${err.sqlMessage || 'Failed to create session'}` });
+            return res.status(500).json({ error: `Database error: ${err.message || 'Failed to create session'}` });
         }
 
         res.status(201).json({
@@ -102,10 +199,9 @@ app.post('/api/sessions/create', (req, res) => {
     });
 });
 
-// Facilitator Endpoint: Get All Active Sessions
 app.get('/api/sessions/active', (req, res) => {
     const query = "SELECT id, session_name, session_code, created_at, expires_at FROM sessions WHERE status = 'active' ORDER BY id DESC";
-    db.query(query, (err, results) => {
+    db.all(query, [], (err, results) => {
         if (err) {
             console.error('Error fetching active sessions:', err);
             return res.status(500).json({ error: 'Failed to fetch active sessions' });
@@ -114,10 +210,9 @@ app.get('/api/sessions/active', (req, res) => {
     });
 });
 
-// Facilitator Endpoint: Get All Sessions History (Active & Ended)
 app.get('/api/sessions/all', (req, res) => {
     const query = "SELECT id, session_name, session_code, status, created_at, expires_at FROM sessions ORDER BY id DESC";
-    db.query(query, (err, results) => {
+    db.all(query, [], (err, results) => {
         if (err) {
             console.error('Error fetching all sessions:', err);
             return res.status(500).json({ error: 'Failed to fetch sessions history' });
@@ -126,7 +221,6 @@ app.get('/api/sessions/all', (req, res) => {
     });
 });
 
-// Facilitator Endpoint: End an Active Session
 app.post('/api/sessions/end', (req, res) => {
     const { session_code } = req.body;
 
@@ -136,13 +230,13 @@ app.post('/api/sessions/end', (req, res) => {
 
     const endSessionQuery = "UPDATE sessions SET status = 'ended' WHERE session_code = ?";
 
-    db.query(endSessionQuery, [session_code], (err, result) => {
+    db.run(endSessionQuery, [session_code], function (err) {
         if (err) {
-            console.error('Error ending session in MySQL:', err);
+            console.error('Error ending session:', err);
             return res.status(500).json({ error: 'Failed to end session.' });
         }
 
-        if (result.affectedRows === 0) {
+        if (this.changes === 0) {
             return res.status(404).json({ error: 'Session code not found.' });
         }
 
@@ -150,7 +244,6 @@ app.post('/api/sessions/end', (req, res) => {
     });
 });
 
-// Facilitator Endpoint: Delete a Session from History
 app.delete('/api/sessions/delete', (req, res) => {
     const { session_code } = req.body;
 
@@ -160,13 +253,13 @@ app.delete('/api/sessions/delete', (req, res) => {
 
     const deleteSessionQuery = "DELETE FROM sessions WHERE session_code = ?";
 
-    db.query(deleteSessionQuery, [session_code], (err, result) => {
+    db.run(deleteSessionQuery, [session_code], function (err) {
         if (err) {
             console.error('Error deleting session:', err);
             return res.status(500).json({ error: 'Failed to delete session from database.' });
         }
 
-        if (result.affectedRows === 0) {
+        if (this.changes === 0) {
             return res.status(404).json({ error: 'Session code not found.' });
         }
 
@@ -178,47 +271,47 @@ app.delete('/api/sessions/delete', (req, res) => {
 // STUDENT AUTHENTICATION ENDPOINTS
 // -------------------------------------------------------------------
 
-app.post('/api/students/register', async (req, res) => {
+app.post('/api/students/register', (req, res) => {
     const { real_name, email, password, session_code } = req.body;
 
     if (!real_name || !email || !password || !session_code) {
         return res.status(400).json({ error: 'All fields are required.' });
     }
 
-    try {
-        const sessionCheckQuery = "SELECT * FROM sessions WHERE session_code = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())";
+    const nowUtc = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const sessionCheckQuery = "SELECT * FROM sessions WHERE session_code = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)";
 
-        db.query(sessionCheckQuery, [session_code], async (err, sessionResults) => {
-            if (err) {
-                console.error('Session check error:', err);
-                return res.status(500).json({ error: 'Database error checking session.' });
-            }
-            if (sessionResults.length === 0) {
-                return res.status(400).json({ error: 'Invalid, inactive, or expired session code.' });
-            }
+    db.get(sessionCheckQuery, [session_code, nowUtc], async (err, sessionRow) => {
+        if (err) {
+            console.error('Session check error:', err);
+            return res.status(500).json({ error: 'Database error checking session.' });
+        }
+        if (!sessionRow) {
+            return res.status(400).json({ error: 'Invalid, inactive, or expired session code.' });
+        }
 
+        try {
             const assignedAlias = `User_${Math.floor(1000 + Math.random() * 9000)}`;
-
             const salt = await bcrypt.genSalt(10);
             const passwordHash = await bcrypt.hash(password, salt);
 
             const insertIdentityQuery = "INSERT INTO student_identities (real_name, email, assigned_alias, session_code) VALUES (?, ?, ?, ?)";
 
-            db.query(insertIdentityQuery, [real_name, email, assignedAlias, session_code], (idErr) => {
+            db.run(insertIdentityQuery, [real_name, email, assignedAlias, session_code], function (idErr) {
                 if (idErr) {
                     console.error('--- STUDENT IDENTITY INSERT ERROR ---', idErr);
-                    if (idErr.code === 'ER_DUP_ENTRY') {
+                    if (idErr.message && idErr.message.includes('UNIQUE constraint failed: student_identities.email')) {
                         return res.status(400).json({ error: 'An account with this email address already exists.' });
                     }
-                    return res.status(500).json({ error: `Failed to record student identity: ${idErr.sqlMessage || 'Database error'}` });
+                    return res.status(500).json({ error: `Failed to record student identity: ${idErr.message || 'Database error'}` });
                 }
 
                 const insertStudentQuery = "INSERT INTO students (assigned_alias, password_hash, session_code) VALUES (?, ?, ?)";
 
-                db.query(insertStudentQuery, [assignedAlias, passwordHash, session_code], (studentErr) => {
+                db.run(insertStudentQuery, [assignedAlias, passwordHash, session_code], function (studentErr) {
                     if (studentErr) {
                         console.error('--- STUDENT CREDENTIALS INSERT ERROR ---', studentErr);
-                        return res.status(500).json({ error: `Failed to create student credentials: ${studentErr.sqlMessage}` });
+                        return res.status(500).json({ error: `Failed to create student credentials: ${studentErr.message}` });
                     }
 
                     res.status(201).json({
@@ -228,11 +321,11 @@ app.post('/api/students/register', async (req, res) => {
                     });
                 });
             });
-        });
-    } catch (error) {
-        console.error('Server error during registration:', error);
-        res.status(500).json({ error: 'Internal server error.' });
-    }
+        } catch (error) {
+            console.error('Server error during registration:', error);
+            res.status(500).json({ error: 'Internal server error.' });
+        }
+    });
 });
 
 app.post('/api/students/login', (req, res) => {
@@ -243,16 +336,15 @@ app.post('/api/students/login', (req, res) => {
     }
 
     const studentQuery = 'SELECT * FROM students WHERE assigned_alias = ?';
-    db.query(studentQuery, [assigned_alias], async (err, results) => {
+    db.get(studentQuery, [assigned_alias], async (err, student) => {
         if (err) {
             console.error('Login query error:', err);
             return res.status(500).json({ error: 'Database error during login.' });
         }
-        if (results.length === 0) {
+        if (!student) {
             return res.status(401).json({ error: 'Invalid Assigned ID or password.' });
         }
 
-        const student = results[0];
         const isMatch = await bcrypt.compare(password, student.password_hash);
 
         if (!isMatch) {
@@ -273,7 +365,7 @@ app.post('/api/students/login', (req, res) => {
 
 app.get('/api/prompts', (req, res) => {
     const query = 'SELECT * FROM prompts ORDER BY id ASC';
-    db.query(query, (err, results) => {
+    db.all(query, [], (err, results) => {
         if (err) {
             console.error('Database query error:', err);
             return res.status(500).json({ error: 'Failed to fetch prompts' });
@@ -283,52 +375,44 @@ app.get('/api/prompts', (req, res) => {
 });
 
 app.post('/api/walk', (req, res) => {
-    // 1. Extract prompt_id alongside your existing fields
-    const { prompt_id, answer, type, alias, current_score } = req.body; 
+    const { prompt_id, answer, type, alias, current_score } = req.body;
     let stepValue = 0;
 
     if (type === 'advantage') {
-        if (answer === 'yes') {
-            stepValue = 1;  
-        } else {
-            stepValue = 0;  
-        }
+        stepValue = answer === 'yes' ? 1 : 0;
     } else if (type === 'disadvantage') {
-        if (answer === 'yes') {
-            stepValue = -1; 
-        } else {
-            stepValue = 0;  
-        }
+        stepValue = answer === 'yes' ? -1 : 0;
     }
 
     const newScore = (current_score || 0) + stepValue;
 
-    // 2. NEW: Save the individual prompt answer into your 'response' (singular) table
     if (prompt_id) {
         const formattedAnswer = answer.toLowerCase() === 'yes' ? 'Yes' : 'No';
         const promptLogQuery = `
-            INSERT INTO response (student_alias, prompt_id, answer) 
-            VALUES (?, ?, ?) 
-            ON DUPLICATE KEY UPDATE answer = VALUES(answer)
+            INSERT INTO response (student_alias, prompt_id, answer)
+            VALUES (?, ?, ?)
+            ON CONFLICT(student_alias, prompt_id) DO UPDATE SET answer = excluded.answer
         `;
-        db.query(promptLogQuery, [alias, prompt_id, formattedAnswer], (pErr) => {
+        db.run(promptLogQuery, [alias, prompt_id, formattedAnswer], (pErr) => {
             if (pErr) console.error('Error logging individual prompt response:', pErr);
         });
     }
 
-    // 3. EXISTING: Keep your total score update in 'responses' (plural)
-    const upsertQuery = "INSERT INTO responses (student_alias, total_score) VALUES (?, ?) ON DUPLICATE KEY UPDATE total_score = ?";
+    const upsertQuery = `
+        INSERT INTO responses (student_alias, total_score)
+        VALUES (?, ?)
+        ON CONFLICT(student_alias) DO UPDATE SET total_score = excluded.total_score
+    `;
 
-    db.query(upsertQuery, [alias, newScore, newScore], (err) => {
+    db.run(upsertQuery, [alias, newScore], (err) => {
         if (err) {
             console.error('Database error when saving response:', err);
             return res.status(500).json({ error: 'Failed to record response' });
         }
-        res.json({ message: "Position updated", movement: stepValue, total_score: newScore });
+        res.json({ message: 'Position updated', movement: stepValue, total_score: newScore });
     });
 });
 
-// Student Endpoint: Save Written Reflection
 app.post('/api/reflection', (req, res) => {
     const { alias, reflection } = req.body;
 
@@ -338,7 +422,7 @@ app.post('/api/reflection', (req, res) => {
 
     const updateReflectionQuery = "UPDATE responses SET reflection_text = ? WHERE student_alias = ?";
 
-    db.query(updateReflectionQuery, [reflection, alias], (err, result) => {
+    db.run(updateReflectionQuery, [reflection, alias], function (err) {
         if (err) {
             console.error('Error saving reflection:', err);
             return res.status(500).json({ error: 'Failed to save reflection.' });
@@ -351,14 +435,14 @@ app.post('/api/reflection', (req, res) => {
 app.get('/api/leaderboard', (req, res) => {
     const { session_code } = req.query;
     const query = session_code
-        ? `SELECT r.student_alias, r.total_score 
-        FROM responses r 
-        JOIN students s ON r.student_alias = s.assigned_alias 
-        WHERE s.session_code = ? 
-        ORDER BY r.total_score ASC`
+        ? `SELECT r.student_alias, r.total_score
+            FROM responses r
+            JOIN students s ON r.student_alias = s.assigned_alias
+            WHERE s.session_code = ?
+            ORDER BY r.total_score ASC`
         : 'SELECT student_alias, total_score FROM responses ORDER BY total_score ASC';
 
-    db.query(query, session_code ? [session_code] : [], (err, results) => {
+    db.all(query, session_code ? [session_code] : [], (err, results) => {
         if (err) {
             console.error('Leaderboard fetch error:', err);
             return res.status(500).json({ error: 'Failed to fetch leaderboard data' });
@@ -371,7 +455,6 @@ app.get('/api/leaderboard', (req, res) => {
 // MILESTONE 3 / PORTION 3: ANALYTICS & EXPORT ENDPOINTS
 // -------------------------------------------------------------------
 
-// 1. Facilitator Analytics: Response Density Heatmap
 app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
     const { session_code } = req.params;
 
@@ -407,30 +490,27 @@ app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
         { id: 29, prompt_text: "If you were ever the victim of violence related to your race, ethnicity, gender, age, or sexual orientation, take one step back.", prompt_type: "disadvantage" }
     ];
 
-// 1. Count active participants who submitted responses strictly in THIS session
     const countQuery = `
-        SELECT COUNT(DISTINCT r.student_alias) AS total_participants 
+        SELECT COUNT(DISTINCT r.student_alias) AS total_participants
         FROM responses r
         JOIN students s ON r.student_alias = s.assigned_alias
         WHERE s.session_code = ?
     `;
 
-    db.query(countQuery, [session_code], (err, countResults) => {
+    db.get(countQuery, [session_code], (err, countRow) => {
         if (err) {
-            console.error("Heatmap count error:", err);
-            return res.status(500).json({ error: "Database error counting participants" });
+            console.error('Heatmap count error:', err);
+            return res.status(500).json({ error: 'Database error counting participants' });
         }
 
-        const total = (countResults && countResults[0]) ? countResults[0].total_participants : 0;
+        const total = countRow ? countRow.total_participants : 0;
 
-        // 2. Hardcoded response density weights scaled strictly to THIS session's participant count
         const baseWeights = [
             0.13, 0.38, 0.88, 0.88, 0.63, 0.38, 0.63, 0.25, 0.50, 0.25,
             0.25, 0.88, 0.38, 0.38, 0.50, 0.88, 0.88, 0.25, 0.50, 0.13,
             0.25, 0.25, 0.25, 0.75, 0.50, 0.63, 0.25, 0.25, 0.13
         ];
 
-        // 3. Return the exact keys App_2.js reads: yes_percentage & total_responses
         const heatmapData = fullPromptsBank.map((prompt, index) => {
             const weight = baseWeights[index] || 0.5;
             const yesCount = total > 0 ? Math.min(total, Math.max(0, Math.round(total * weight))) : 0;
@@ -450,18 +530,17 @@ app.get('/api/admin/analytics/heatmaps/:session_code', (req, res) => {
     });
 });
 
-// 2. Facilitator Analytics: Score Distribution Histogram Data (Isolated by session_code)
 app.get('/api/admin/analytics/histogram/:session_code', (req, res) => {
     const { session_code } = req.params;
     const query = `
-        SELECT r.total_score, COUNT(*) as frequency 
+        SELECT r.total_score, COUNT(*) as frequency
         FROM responses r
         JOIN students s ON r.student_alias = s.assigned_alias
         WHERE s.session_code = ?
-        GROUP BY r.total_score 
+        GROUP BY r.total_score
         ORDER BY r.total_score ASC
     `;
-    db.query(query, [session_code], (err, results) => {
+    db.all(query, [session_code], (err, results) => {
         if (err) {
             console.error('Error fetching histogram data:', err);
             return res.json([]);
@@ -470,7 +549,6 @@ app.get('/api/admin/analytics/histogram/:session_code', (req, res) => {
     });
 });
 
-// 3. Facilitator CSV Data Export Endpoint (Isolated by session_code)
 app.get('/api/admin/export/:session_code', (req, res) => {
     const { session_code } = req.params;
     const query = `
@@ -480,7 +558,7 @@ app.get('/api/admin/export/:session_code', (req, res) => {
         WHERE s.session_code = ?
         ORDER BY r.total_score ASC
     `;
-    db.query(query, [session_code], (err, results) => {
+    db.all(query, [session_code], (err, results) => {
         if (err) {
             console.error('Error generating CSV export:', err);
             return res.status(500).json({ error: 'Failed to export session data', details: err.message });
@@ -498,7 +576,6 @@ app.get('/api/admin/export/:session_code', (req, res) => {
     });
 });
 
-// 4. Student Endpoint: Submit Qualitative Reflection
 app.post('/api/walk/reflection', (req, res) => {
     const { alias, reflection } = req.body;
 
@@ -507,7 +584,7 @@ app.post('/api/walk/reflection', (req, res) => {
     }
 
     const query = "UPDATE responses SET reflection_text = ? WHERE student_alias = ?";
-    db.query(query, [reflection, alias], (err, result) => {
+    db.run(query, [reflection, alias], function (err) {
         if (err) {
             console.error('Error saving reflection:', err);
             return res.status(500).json({ error: 'Failed to save reflection response.' });
