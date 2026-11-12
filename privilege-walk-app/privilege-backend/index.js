@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { createClient } = require('@libsql/client');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use(cors({
             /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin) ||
             /^https:\/\/.*\.trycloudflare\.com$/.test(origin) ||
             /^https:\/\/.*\.ngrok-free\.app$/.test(origin);
+            /^https:\/\/.*\.onrender\.com$/.test(origin);
 
         if (isAllowed) {
             callback(null, true);
@@ -38,19 +40,50 @@ app.use(cors({
 
 app.use(express.json());
 
-// Initialize Embedded SQLite Database (Zero external DB installation required)
+// Initialize Turso Cloud SQLite (if env vars exist) or Local Embedded SQLite
 const dbFolder = process.env.DB_DIR || __dirname;
 if (!fs.existsSync(dbFolder)) {
     fs.mkdirSync(dbFolder, { recursive: true });
 }
-const dbPath = path.join(dbFolder, 'privilege_walk.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Failed to connect to SQLite database:', err);
-    } else {
-        console.log('Connected to embedded SQLite database at:', dbPath);
-    }
+const localDbPath = path.join(dbFolder, 'privilege_walk.db');
+
+const client = createClient({
+    url: process.env.TURSO_DATABASE_URL || `file:${localDbPath}`,
+    authToken: process.env.TURSO_AUTH_TOKEN
 });
+
+console.log('Connected to SQLite database:', process.env.TURSO_DATABASE_URL || localDbPath);
+
+// Compatibility wrapper matching existing db.run / db.get / db.all calls
+const db = {
+    serialize: (fn) => fn(),
+    run: function (sql, params = [], callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then((res) => {
+                if (callback) callback.call({ changes: res.rowsAffected, lastID: Number(res.lastInsertRowid) }, null);
+            })
+            .catch((err) => { if (callback) callback(err); });
+    },
+    get: function (sql, params = [], callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then((res) => { if (callback) callback(null, res.rows[0]); })
+            .catch((err) => { if (callback) callback(err); });
+    },
+    all: function (sql, params = [], callback) {
+        if (typeof params === 'function') { callback = params; params = []; }
+        client.execute({ sql, args: params })
+            .then((res) => { if (callback) callback(null, res.rows); })
+            .catch((err) => { if (callback) callback(err); });
+    },
+    prepare: function (sql) {
+        return {
+            run: (...args) => client.execute({ sql, args }),
+            finalize: () => {}
+        };
+    }
+};
 
 // Auto-create schema and seed 29 prompts on first run
 db.serialize(() => {
@@ -624,6 +657,7 @@ app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '../privilege-frontend/build', 'index.html'));
 });
 
-app.listen(3000, () => {
-    console.log('Server is running on port 3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
