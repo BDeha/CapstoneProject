@@ -21,7 +21,9 @@ app.use(cors({
         if (!origin) return callback(null, true);
 
         const isAllowed = allowedOrigins.includes(origin) ||
-            /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin);
+            /^http:\/\/(192\.168|10\.\d{1,3}|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin) ||
+            /^https:\/\/.*\.trycloudflare\.com$/.test(origin) ||
+            /^https:\/\/.*\.ngrok-free\.app$/.test(origin);
 
         if (isAllowed) {
             callback(null, true);
