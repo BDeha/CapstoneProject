@@ -1,0 +1,41 @@
+{
+  "name": "privilege-walk-app",
+  "version": "1.0.0",
+  "description": "Classroom Privilege Walk Polling Desktop Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "build": {
+    "appId": "com.bdeha.privilegewalk",
+    "productName": "Privilege Walk App",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "privilege-backend/**/*",
+      "privilege-frontend/build/**/*"
+    ],
+    "asarUnpack": [
+      "privilege-backend/**/*",
+      "privilege-frontend/build/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "wait-on": "^9.5.1"
+  },
+  "devDependencies": {
+    "electron": "^45.3.1",
+    "electron-builder": "^26.18.0"
+  }
+}

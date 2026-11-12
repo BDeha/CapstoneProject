@@ -1,7 +1,8 @@
 const express = require('express'); 
 const cors = require('cors');        
 const mysql = require('mysql2');     
-const bcrypt = require('bcryptjs');  
+const bcrypt = require('bcryptjs');
+const path = require('path');
 
 const app = express();               
 
@@ -47,9 +48,9 @@ const db = mysql.createPool({
     queueLimit: 0
 });
 
-app.get('/', (req, res) => {
-    res.send('The Privilege Walk Server is Live!');
-});
+// app.get('/', (req, res) => {
+//     res.send('The Privilege Walk Server is Live!');
+// });
 
 // -------------------------------------------------------------------
 // FACILITATOR / ADMIN ENDPOINTS
@@ -513,6 +514,14 @@ app.post('/api/walk/reflection', (req, res) => {
         }
         res.json({ message: 'Reflection submitted successfully.' });
     });
+});
+
+// Serve React production build
+app.use(express.static(path.join(__dirname, '../privilege-frontend/build')));
+
+// Fallback route for React Router (Express v5 compatible)
+app.get('/{*splat}', (req, res) => {
+    res.sendFile(path.join(__dirname, '../privilege-frontend/build', 'index.html'));
 });
 
 app.listen(3000, () => {
