@@ -5,7 +5,6 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { createClient } = require('@libsql/client');
 
 const app = express();
 
